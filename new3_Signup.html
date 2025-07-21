@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Signup Page</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Poppins', sans-serif;
+      background: url('Login (Website) (5).png') no-repeat center center fixed;
+      background-size: cover;
+      background-color: #000;
+      height: 100vh;
+      position: relative;
+      color: white;
+    }
+  </style>
+
+</head>
+<body>
+
+  <div class="signup">
+    Already have an account? 
+    <a href="new3_Login.html" style="text-decoration: underline;">Login</a>
+  </div>
+
+  
+  <form class="login-box" id="loginForm" novalidate>
+    
+    <div class="input-group">
+      <input type="text" id="username" name="username" placeholder=" " required>
+      <label for="username">Set username</label>
+    </div>
+
+    
+    <div class="input-group password-wrapper">
+      <input type="password" id="password" name="password" placeholder=" " required>
+      <label for="password">Set password</label>
+
+      
+      <button type="submit" class="arrow-button">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#333" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14M13 6l6 6-6 6"/>
+        </svg>
+      </button>
+    </div>
+  </form>
+
+  
+  <script>
+    const form = document.getElementById('loginForm');
+
+    form.addEventListener('submit', function (e) {
+      if (!form.checkValidity()) {
+        e.preventDefault(); 
+        form.classList.add('was-validated'); 
+      } else {
+        
+        window.location.href = "Home4.html";
+        e.preventDefault(); 
+      }
+    });
+  </script>
+
+</body>
+</html>
