@@ -1,0 +1,632 @@
+    .signup {
+      position: absolute;
+      top: 20px;
+      right: 30px;
+      font-size: 14px;
+      font-weight: 400;
+      color: white;
+      cursor: pointer;
+    }
+
+    .login-box {
+      position: absolute;
+      bottom: 270px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+      opacity: 65%;
+    }
+
+    .input-group {
+      position: relative;
+      width: 83%;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 26px 30px 10px 35px;
+      border: none;
+      border-radius: 60px;
+      font-size: 16px;
+      background: rgba(255, 255, 255, 0.8);
+      justify-content: space-around;
+      backdrop-filter: blur(20px);      
+      outline: none;
+      color: #000;
+    }
+
+    .input-group label {
+      position: absolute;
+      left: 35px;
+      top: 15px;
+      font-size: 16px;
+      color: #666;
+      pointer-events: none;
+      transition: 0.2s ease;
+    }
+
+    .input-group input:focus + label,
+    .input-group input:not(:placeholder-shown) + label {
+      top: 10px;
+      font-size: 10px;
+      color: #333;
+    }
+
+    /* Show red border and message on invalid only after submit attempt */
+    .was-validated input:invalid {
+      border: 2px solid red;
+    }
+
+    .was-validated input:invalid + label::after {
+      content: "  ✱ required";
+      color: red;
+      font-size: 10px;
+      margin-left: 5px;
+    }
+
+    .password-wrapper {
+      position: relative;
+    }
+
+    .arrow-button {
+      position: absolute;
+      top: 50%;
+      left: 350px;
+      transform: translateY(-50%);
+      background-color: rgba(255, 255, 255, 0.8);
+      border: 1px solid transparent;
+      border-radius: 50%;
+      width: 35px;
+      height: 35px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(128, 123, 123, 0.3);
+      transition: border 0.2s;
+    }
+
+    .arrow-button:hover,
+    .arrow-button:focus {
+      border: 1.8px solid #4d4c4c;
+    }
+
+    .arrow-button svg {
+      width: 150%;
+      height: 40px;
+      stroke-width: 4px;
+      opacity: 50%;
+    }
+
+     * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Poppins', sans-serif;
+      scroll-behavior: smooth;
+      overflow: hidden;
+      font-size: 100%;
+    }
+
+    .divider {
+        border-top: 1px solid #d5d5d59c;
+        margin: 30px 0; /* Updated line */
+      }
+
+    body {
+      background: url('Login (Website) (9).png') no-repeat center center fixed;
+      background-size: cover;
+    }
+
+    #profile-toggle {
+      display: none;
+    }
+
+    .fixed-top {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .fixed-top label img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .logout-btn {
+      background-color: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: none;
+      border-radius: 60px;
+      padding: 14px 20px;
+      font-weight: 500;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: 'Poppins', sans-serif;
+      margin-right: 20px;
+    }
+
+    .profile-panel {
+      position: fixed;
+      top: 0;
+      right: -40%;
+      width: 40%;
+      height: 100%;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      transition: right 0.3s ease;
+      z-index: 9;
+      padding: 40px 20px;
+      color: black;
+    }
+
+    #profile-toggle:checked ~ .profile-panel {
+      right: 0;
+    }
+
+    .profile-panel h2 {
+      margin-bottom: 20px;
+    }
+
+    .profile-panel ul {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .profile-panel li {
+      margin-bottom: 15px;
+    }
+
+    .profile-panel a {
+      text-decoration: none;
+      color: #a02626;
+    }
+
+    .profile-panel .back-btn {
+      display: inline-block;
+      margin-top: 30px;
+      padding: 8px 16px;
+      background: #ca0d0d;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .sections-container {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      overflow-y: scroll;
+      width: 100%;
+      z-index: 1;
+    }
+
+    section {
+      min-height: 100vh;
+      padding-left: 60px;
+      padding-right: 60px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      color: #b81d1d;
+    }
+
+    .section-box {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(20px);
+      padding: 30px;
+      border-radius: 20px;
+      height: 590px;
+      color: #ffffff;
+      bottom: 100px;
+    }
+
+    .bottom-nav {
+      position: fixed;
+      bottom: 20px;
+      width: 68%;
+      margin-left: 17%;
+      background-color: rgba(255, 255, 255, 0.192);
+      backdrop-filter: blur(20px);
+      display: flex;
+      justify-content: space-around;
+      padding: 12px 0;
+      border-radius: 60px;
+      z-index: 10;
+    }
+
+    .bottom-nav a {
+      text-decoration: none;
+      color: rgba(255, 255, 255, 0.74);
+      font-weight: 450;
+      font-size: 14px;
+      position: relative;
+      padding: 4px 10px;
+    }
+
+    .bottom-nav a.active::after {
+      content: "";
+      position: absolute;
+      bottom: -6px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: #bbb3b3;
+      border-radius: 2px;
+    }
+
+    .logout-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      background-color: black;
+      width: 100%;
+      height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .logout-overlay img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: cover;
+    }
+
+    #logout:target {
+      display: flex;
+    }
+
+    .table_component {
+        overflow: auto;
+        width: 100%;
+    }
+
+    .table_component table {
+        border: 1px solid #4e4e4e1f;
+        height: 100%;
+        width: 100%;
+        table-layout: fixed;
+        border-collapse: collapse;
+        border-spacing: 2px;
+        text-align: center;
+    }
+
+    .table_component caption {
+        caption-side: top;
+        text-align: left;
+    }
+
+    .table_component th {
+        border: 1px solid #dededf;
+        background-color: rgba(220, 220, 220, 0.227);
+        color: #ffffff;
+        padding: 38px;
+    }
+
+    .table_component td {
+        border: 1px solid #dededf;
+        background-color: transparent;
+        color: #ffffff;
+        padding: 18px;
+    }
+
+    /* Styles for the new course grid layout */
+    .course-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr); /* Creates 3 equal columns */
+        gap: 100px; /* Space between columns */
+        padding-top: 50px;
+        padding-left: 50px;
+    }
+  
+    .course-item {
+        margin-bottom: 30px; /* Space between courses in the same column */
+    }
+  
+    .course-item p {
+        margin: 0 0 4px 0; /* Adjust spacing for course details */
+        padding-left: 1px; /* Indent all text */
+        font-size: 20x;
+        font-family: "poppins";
+    }
+    
+    /* Style for the course title and instructor lines to add bullets */
+    .course-title,
+    .course-instructor {
+        position: relative;
+    }
+    
+    .course-title {
+        font-weight: 600; /* Make title bold */
+        font-size: 16px;
+        margin-bottom: 8px;
+    }
+    
+    /* The '::before' pseudo-element creates the bullet point */
+   
+
+    /* Styles for the new assignment grid layout */
+    .assignment-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr; /* Creates 2 equal columns */
+        padding-top: 20px;
+        padding-left: 25px;
+    }
+    
+    .assignment-column p {
+        margin-bottom: 30px;
+    }
+    
+    .assignment-column ul, .assignment-column ol {
+        margin: -10px 0 16px 0;
+        padding-left: 20px;
+        list-style-position: outside;
+    }
+    
+    .sub-list {
+        list-style-type: lower-alpha; /* For a, b, c bullets */
+        padding-left: 35px !important;
+    }
+    
+    .submission-link {
+        color: #a9d7ff;
+        text-decoration: underline;
+    }
+
+    /* Add this new code */
+    .assignment-column:first-child {
+        border-right: 2px solid rgba(255, 255, 255, 0.3);
+        margin-right: 50px;
+    }
+
+
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Poppins', sans-serif;
+      scroll-behavior: smooth;
+      overflow: hidden;
+      font-size: 100%;
+    }
+
+    /* CORRECTED DIVIDER STYLE */
+    .divider {
+      border-top: 1px solid #d5d5d59c;
+      margin: 15px 0;
+    }
+
+    body {
+      background: url('Login (Website) (9).png') no-repeat center center fixed;
+      background-size: cover;
+    }
+
+    #profile-toggle {
+      display: none;
+    }
+
+    .fixed-top {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .fixed-top label img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .logout-btn {
+      background-color: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: none;
+      border-radius: 60px;
+      padding: 12px 20px;
+      font-weight: 500;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: 'Poppins', sans-serif;
+    }
+
+    .profile-panel {
+      position: fixed;
+      top: 30px;
+      right: -50%;
+      width: 30%;
+      height: 84%;
+      backdrop-filter: blur(100px);
+      transition: right 0.3s ease;
+      z-index: 9;
+      padding: 40px 20px;
+      color: rgba(255, 255, 255, 0.431);
+      border-radius: 30px;
+    }
+
+    #profile-toggle:checked ~ .profile-panel {
+      right: 0;
+    }
+
+    .profile-panel h2 {
+      margin-bottom: 20px;
+    }
+
+    .profile-panel ul {
+      list-style: none;
+      padding-left: 10px;
+    }
+
+    .profile-panel li {
+      margin-bottom: 15px;
+    }
+
+    .profile-panel a {
+      text-decoration: none;
+      color: #222;
+    }
+
+    .profile-panel .back-btn {
+      display: inline-block;
+      margin-top: 30px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .profile-image {
+      position: center;
+      width: 150px; 
+      height: 200px; 
+      object-fit: cover; 
+      margin-left: 130px;
+    }
+
+    h2 { 
+        font-size: 10; 
+        color: #fffefe;
+        text-align: left;
+        margin-bottom: 8px;
+        padding-top: 15px; 
+        padding-left: 30px;
+    }
+
+    h3 { 
+        font-size: 1.1em; 
+        color: #fffefe;
+        text-align: left;
+        margin-bottom: 8px;
+        padding-top: 25px; 
+        padding-left: 30px;
+    }
+
+    .data-value { 
+        font-size: 10; 
+        font-weight: normal; 
+        color: #aeaeae;
+        margin-left: 5px; 
+    }
+
+    .sections-container {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      overflow-y: scroll;
+      width: 100%;
+      z-index: 1;
+    }
+
+    section {
+      min-height: 100vh;
+      padding-left: 60px;
+      padding-right: 60px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      color: #fff;
+    }
+
+    .section-box {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      padding: 30px;
+      border-radius: 20px;
+      height: 590px;
+      color: #ffffff;
+      bottom: 100px;
+    }
+
+    .section-box h1 {
+      text-align: center;
+    }
+
+    /* Added for better spacing in the course list */
+    #course .section-box p {
+        line-height: 1.6;
+    }
+
+    .bottom-nav {
+      position: fixed;
+      bottom: 20px;
+      width: 68%;
+      margin-left: 17%;
+      background-color: rgba(255, 255, 255, 0.192);
+      backdrop-filter: blur(6px);
+      display: flex;
+      justify-content: space-around;
+      padding: 12px 0;
+      border-radius: 60px;
+      z-index: 10;
+    }
+
+    .bottom-nav a {
+      color: white;
+      padding: 5px 20px;
+      text-decoration: none;
+    }
+
+    .bottom-nav a:hover {
+      background-color: #98989885;
+      border-radius: 20px;
+      color: rgb(255, 255, 255);
+    }
+
+    .bottom-nav a.active::after {
+      content: "";
+      position: absolute;
+      bottom: -6px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: #bbb3b3;
+      border-radius: 2px;
+    }
+
+    .logout-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      background-color: black;
+      width: 100%;
+      height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .logout-overlay img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: cover;
+    }
+
+    #logout:target {
+      display: flex;
+    }
