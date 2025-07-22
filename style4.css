@@ -1,107 +1,3 @@
-    .signup {
-      position: absolute;
-      top: 20px;
-      right: 30px;
-      font-size: 14px;
-      font-weight: 400;
-      color: white;
-      cursor: pointer;
-    }
-
-    .login-box {
-      position: absolute;
-      bottom: 270px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 600px;
-      max-width: 400px;
-      display: flex;
-      flex-direction: column;
-      gap: 40px;
-      opacity: 65%;
-    }
-
-    .input-group {
-      position: relative;
-      width: 83%;
-    }
-
-    .input-group input {
-      width: 100%;
-      padding: 26px 30px 10px 35px;
-      border: none;
-      border-radius: 60px;
-      font-size: 16px;
-      background: rgba(255, 255, 255, 0.8);
-      justify-content: space-around;
-      backdrop-filter: blur(20px);      
-      outline: none;
-      color: #000;
-    }
-
-    .input-group label {
-      position: absolute;
-      left: 35px;
-      top: 15px;
-      font-size: 16px;
-      color: #666;
-      pointer-events: none;
-      transition: 0.2s ease;
-    }
-
-    .input-group input:focus + label,
-    .input-group input:not(:placeholder-shown) + label {
-      top: 10px;
-      font-size: 10px;
-      color: #333;
-    }
-
-    /* Show red border and message on invalid only after submit attempt */
-    .was-validated input:invalid {
-      border: 2px solid red;
-    }
-
-    .was-validated input:invalid + label::after {
-      content: "  ✱ required";
-      color: red;
-      font-size: 10px;
-      margin-left: 5px;
-    }
-
-    .password-wrapper {
-      position: relative;
-    }
-
-    .arrow-button {
-      position: absolute;
-      top: 50%;
-      left: 350px;
-      transform: translateY(-50%);
-      background-color: rgba(255, 255, 255, 0.8);
-      border: 1px solid transparent;
-      border-radius: 50%;
-      width: 35px;
-      height: 35px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      box-shadow: 0 4px 10px rgba(128, 123, 123, 0.3);
-      transition: border 0.2s;
-    }
-
-    .arrow-button:hover,
-    .arrow-button:focus {
-      border: 1.8px solid #4d4c4c;
-    }
-
-    .arrow-button svg {
-      width: 150%;
-      height: 40px;
-      stroke-width: 4px;
-      opacity: 50%;
-    }
-
      * {
       margin: 0;
       padding: 0;
@@ -132,18 +28,16 @@
 
     .fixed-top {
       position: fixed;
-      top: 20px;
-      right: 20px;
+      padding-top: 10px;
+      padding-right: 28px;
       z-index: 10;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 20px;
     }
 
     .fixed-top label img {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
+      border-radius: 10%;
       cursor: pointer;
     }
 
@@ -326,45 +220,41 @@
         padding: 18px;
     }
 
-    /* Styles for the new course grid layout */
+    
     .course-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr); /* Creates 3 equal columns */
-        gap: 100px; /* Space between columns */
+        grid-template-columns: repeat(3, 1fr); 
+        gap: 100px; 
         padding-top: 50px;
         padding-left: 50px;
     }
   
     .course-item {
-        margin-bottom: 30px; /* Space between courses in the same column */
+        margin-bottom: 30px; 
     }
   
     .course-item p {
-        margin: 0 0 4px 0; /* Adjust spacing for course details */
-        padding-left: 1px; /* Indent all text */
+        margin: 0 0 4px 0; 
+        padding-left: 1px;
         font-size: 20x;
         font-family: "poppins";
     }
     
-    /* Style for the course title and instructor lines to add bullets */
     .course-title,
     .course-instructor {
         position: relative;
     }
     
     .course-title {
-        font-weight: 600; /* Make title bold */
+        font-weight: 600;
         font-size: 16px;
         margin-bottom: 8px;
     }
     
-    /* The '::before' pseudo-element creates the bullet point */
    
-
-    /* Styles for the new assignment grid layout */
     .assignment-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr; /* Creates 2 equal columns */
+        grid-template-columns: 1fr 1fr; 
         padding-top: 20px;
         padding-left: 25px;
     }
@@ -380,7 +270,7 @@
     }
     
     .sub-list {
-        list-style-type: lower-alpha; /* For a, b, c bullets */
+        list-style-type: lower-alpha; 
         padding-left: 35px !important;
     }
     
@@ -389,13 +279,11 @@
         text-decoration: underline;
     }
 
-    /* Add this new code */
+    
     .assignment-column:first-child {
         border-right: 2px solid rgba(255, 255, 255, 0.3);
         margin-right: 50px;
     }
-
-
 
     * {
       margin: 0;
@@ -411,7 +299,7 @@
       font-size: 100%;
     }
 
-    /* CORRECTED DIVIDER STYLE */
+    
     .divider {
       border-top: 1px solid #d5d5d59c;
       margin: 15px 0;
@@ -506,6 +394,7 @@
       height: 200px; 
       object-fit: cover; 
       margin-left: 130px;
+      border-radius: 10px;
     }
 
     h2 { 
