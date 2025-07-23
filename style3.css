@@ -1,105 +1,113 @@
-
-
-    .signup {
-      position: absolute;
-      top: 20px;
-      right: 30px;
-      font-size: 14px;
-      font-weight: 400;
-      color: white;
-      cursor: pointer;
-    }
-
-    .login-box {
-      position: absolute;
-      bottom: 270px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 600px;
-      max-width: 400px;
-      display: flex;
-      flex-direction: column;
-      gap: 40px;
-      opacity: 65%;
-    }
-
-    .input-group {
-      position: relative;
-      width: 83%;
-    }
-
-    .input-group input {
-      width: 100%;
-      padding: 26px 30px 10px 35px;
-      border: none;
-      border-radius: 60px;
-      font-size: 16px;
-      background: rgba(255, 255, 255, 0.8);
-      justify-content: space-around;
-      backdrop-filter: blur(6px);      
-      outline: none;
-      color: #000;
-    }
-
-    .input-group label {
-      position: absolute;
-      left: 35px;
-      top: 15px;
-      font-size: 16px;
-      color: #666;
-      pointer-events: none;
-      transition: 0.2s ease;
-    }
-
-    .input-group input:focus + label,
-    .input-group input:not(:placeholder-shown) + label {
-      top: 10px;
-      font-size: 10px;
-      color: #333;
-    }
-
-    /* Show red border and message on invalid only after submit attempt */
-    .was-validated input:invalid {
-      border: 2px solid red;
-    }
-
-    .was-validated input:invalid + label::after {
-      content: "  ✱ required";
-      color: red;
-      font-size: 10px;
-      margin-left: 5px;
-    }
-
-    .password-wrapper {
-      position: relative;
-    }
-
-    .arrow-button {
-      position: absolute;
-      top: 50%;
-      left: 350px;
-      transform: translateY(-50%);
-      background-color: rgba(255, 255, 255, 0.8);
-      border: 1px solid transparent;
-      border-radius: 50%;
-      width: 35px;
-      height: 35px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      box-shadow: 0 4px 10px rgba(128, 123, 123, 0.3);
-      transition: border 0.2s;
-    }
-
-    .arrow-button:hover,
-    .arrow-button:focus {
-      border: 1.8px solid #4d4c4c;
-    }
-
-    .arrow-button svg {
-      width: 150%;
-      height: 40px;
-      stroke-width: 4px;
-      opacity: 50%;
-    }
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Poppins', sans-serif;
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+    height: 100vh;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .signup {
+    position: absolute;
+    top: 20px;
+    right: 30px;
+    font-size: 14px;
+    font-weight: 400;
+    color: white;
+    cursor: pointer;
+  }
+  
+  .login-box {
+    width: 90%; 
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+    opacity: 0.75; 
+    padding: 20px; 
+  }
+  
+  .input-group {
+    position: relative;
+    width: 100%; 
+  }
+  
+  .input-group input {
+    width: 100%;
+    padding: 26px 65px 10px 35px; 
+    border: none;
+    border-radius: 60px;
+    font-size: 16px;
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(100px);      
+    outline: none;
+    color: #000;
+    box-sizing: border-box; 
+  }
+  
+  .input-group label {
+    position: absolute;
+    left: 35px;
+    top: 15px; 
+    font-size: 16px;
+    color: #666;
+    pointer-events: none;
+    transition: 0.3s ease;
+  }
+  
+  .input-group input:focus + label,
+  .input-group input:not(:placeholder-shown) + label {
+    top: 10px;
+    font-size: 10px;
+    color: #333;
+  }
+  
+  .was-validated input:invalid {
+    border: 2px solid red;
+  }
+  
+  .was-validated input:invalid + label::after {
+    content: "  ✱ required";
+    color: red;
+    font-size: 10px;
+    margin-left: 5px;
+  }
+  
+  .password-wrapper {
+    position: relative;
+  }
+  
+  .arrow-button {
+    position: absolute;
+    top: 50%;
+    right: 15px; 
+    transform: translateY(-50%);
+    background-color: rgba(255, 255, 255, 0.8);
+    border: 1px solid transparent;
+    border-radius: 50%;
+    width: 35px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(128, 123, 123, 0.3);
+    transition: border 0.2s;
+  }
+  
+  .arrow-button:hover,
+  .arrow-button:focus {
+    border: 1.8px solid #4d4c4c;
+  }
+  
+  .arrow-button svg {
+    width: 150%;
+    height: 40px;
+    stroke-width: 4px;
+    opacity: 50%;
+  }
