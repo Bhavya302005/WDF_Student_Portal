@@ -1,0 +1,197 @@
+name: 🚀 Weekly Ultimate Scraper (All Boards + LI/Indeed)
+
+on:
+  schedule:
+    # Run every Sunday at midnight
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+jobs:
+  # 1. Scrape ATS Boards (Lever, Greenhouse, Ashby, Workday, etc.)
+  scrape-ats:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [Ashby, Greenhouse, Lever, Workday, SmartRecruiters, Workable, iCIMS, Jobvite, BambooHR, Teamtailor, Dice, Adp]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Scraper for ${{ matrix.board }}
+        timeout-minutes: 360
+        run: |
+          python pipeline.py --type-a-only --local-only --boards ${{ matrix.board }} --exclude-boards none --output ${{ matrix.board }}_jobs_weekly.json
+        env:
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+          MAX_CONCURRENT_JOBS: "800"
+          # Ensure full detail extraction and 1-week post time
+          WORKDAY_COMPANY_CONCURRENCY: "400"
+          WORKDAY_DETAIL_CONCURRENCY: "1000"
+          WORKDAY_TENANT_DETAIL_CONCURRENCY: "80"
+          WORKDAY_DETAIL_REQUEST_RATE: "500"
+          WORKDAY_SKIP_DETAILS: "false"
+          WORKDAY_POST_TIME: "week"
+          BAMBOOHR_LIST_CONCURRENCY: "500"
+          BAMBOOHR_DETAIL_CONCURRENCY: "200"
+          BAMBOOHR_SKIP_DETAILS: "false"
+          BAMBOOHR_POST_TIME: "week"
+          GREENHOUSE_CONCURRENCY: "800"
+          DEFAULT_POST_TIME: "week"
+          SKIP_DETAILS: "false"
+
+      - name: Upload ATS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobs-ats-${{ matrix.board }}
+          path: ${{ matrix.board }}_jobs_weekly.json
+          if-no-files-found: ignore
+
+  # 2. Scrape LinkedIn & Indeed for the 68 roles (Sharded)
+  scrape-li-indeed:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [linkedin, indeed]
+        shard: ["1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "8/8"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install python-jobspy pandas python-dotenv openpyxl httpx
+
+      - name: Run ${{ matrix.board }} Shard ${{ matrix.shard }} (1 Week Post Time, Full Details)
+        timeout-minutes: 360
+        run: |
+          if [ "${{ matrix.board }}" = "linkedin" ]; then
+            python linkedin/linkedin_68_roles.py --post-time week --shard "${{ matrix.shard }}" --fast --max-results all
+          else
+            python indeed/indeed_68_roles.py --post-time week --shard "${{ matrix.shard }}" --fast --max-results all
+          fi
+        env:
+          PYTHONUNBUFFERED: "1"
+
+      - name: Upload LI/Indeed Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobs-${{ matrix.board }}-${{ strategy.job-index }}
+          path: |
+            linkedin/linkedin_jobs/*shard*
+            indeed/indeed_jobs/*shard*
+          if-no-files-found: ignore
+
+  # 3. Merge everything and commit to repo
+  merge-and-commit:
+    needs: [scrape-ats, scrape-li-indeed]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all job artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: scraped_data/
+
+      - name: Consolidate and Merge Data
+        run: |
+          # 1. Move the ATS JSON files to root
+          find scraped_data -name "*_jobs_weekly.json" -exec mv {} ./ \;
+          
+          # 2. Merge LinkedIn & Indeed shards into master CSVs
+          python3 -c "
+          import json, glob, os, re, csv
+          from indeed.indeed_68_roles import ROLES
+
+          roles_sorted = sorted([r.lower() for r in ROLES], key=len, reverse=True)
+          strict_pattern = re.compile(r'\b(' + '|'.join(re.escape(r) for r in roles_sorted) + r')\b', re.IGNORECASE)
+
+          def write_csv(items, path):
+              if not items: return
+              fieldnames = list(items[0].keys())
+              if 'Index_No' not in fieldnames: fieldnames = ['Index_No'] + fieldnames
+              with open(path, 'w', encoding='utf-8', newline='') as fp:
+                  writer = csv.DictWriter(fp, fieldnames=fieldnames, quoting=csv.QUOTE_NONNUMERIC, escapechar='\\\\')
+                  writer.writeheader()
+                  for idx, item in enumerate(items, start=1):
+                      row = dict(item)
+                      row['Index_No'] = idx
+                      writer.writerow(row)
+
+          def read_shard(filepath):
+              if filepath.endswith('.json'):
+                  with open(filepath, 'r', encoding='utf-8') as f: return json.load(f)
+              elif filepath.endswith('.csv'):
+                  with open(filepath, 'r', encoding='utf-8') as f: return list(csv.DictReader(f))
+              return []
+
+          li_files = sorted(glob.glob('scraped_data/**/linkedin_shard_*_jobs.*', recursive=True))
+          ind_files = sorted(glob.glob('scraped_data/**/indeed_shard_*_jobs.*', recursive=True))
+          
+          li_jobs, ind_jobs, seen = [], [], set()
+
+          for f in li_files:
+              for j in read_shard(f):
+                  jid = j.get('id') or (j.get('title','')+j.get('company','')+j.get('location',''))
+                  if jid not in seen:
+                      seen.add(jid); li_jobs.append(j)
+
+          for f in ind_files:
+              for j in read_shard(f):
+                  jid = j.get('id') or (j.get('title','')+j.get('company','')+j.get('location',''))
+                  if jid not in seen:
+                      seen.add(jid); ind_jobs.append(j)
+
+          if li_jobs:
+              os.makedirs('linkedin/linkedin_jobs', exist_ok=True)
+              write_csv(li_jobs, 'linkedin/linkedin_jobs/linkedin_68roles_jobs_us.csv')
+              li_strict = [j for j in li_jobs if strict_pattern.search(str(j.get('job_title', '')))]
+              write_csv(li_strict, 'linkedin/linkedin_jobs/linkedin_68roles_jobs_us_strict.csv')
+
+          if ind_jobs:
+              os.makedirs('indeed/indeed_jobs', exist_ok=True)
+              write_csv(ind_jobs, 'indeed/indeed_jobs/indeed_68roles_jobs_us.csv')
+              ind_strict = [j for j in ind_jobs if strict_pattern.search(str(j.get('job_title', '')))]
+              write_csv(ind_strict, 'indeed/indeed_jobs/indeed_68roles_jobs_us_strict.csv')
+
+          combined = li_jobs + ind_jobs
+          combined_strict = [j for j in combined if strict_pattern.search(str(j.get('job_title', '')))]
+          if combined:
+              write_csv(combined, 'all_68roles_jobs_us.csv')
+              write_csv(combined_strict, 'all_68roles_jobs_us_strict.csv')
+          "
+          rm -rf scraped_data
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Automated 1-Week Job Extraction (All Boards & 68 Roles) 🤖"
+          file_pattern: '*.json *.csv linkedin/linkedin_jobs/*.csv indeed/indeed_jobs/*.csv'
+          commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
