@@ -1,0 +1,370 @@
+[
+  {
+    "id": "freelancer_d365",
+    "company": "Freelancer.com Client (D365+SharePoint)",
+    "contact_name": "Project Owner (AU)",
+    "platform": "Freelancer.com",
+    "source_url": "https://www.freelancer.com/projects/dot-net/dynamics-sharepoint-integration",
+    "email_found": "",
+    "requirement": "Dynamics 365 + SharePoint Integration, ACT! migration, Copilot ($50 AUD/hr)",
+    "location": "Australia",
+    "timezone": "Australia/Sydney",
+    "country_code": "+61",
+    "crawl_urls": [],
+    "pdf_urls": [],
+    "ddg_queries": [
+      "\"Dynamics 365\" \"SharePoint\" \"ACT!\" freelancer Australia 2026 contact email phone",
+      "site:freelancer.com \"dynamics-sharepoint-integration\" employer profile",
+      "\"Dynamics 365\" \"SharePoint\" \"ACT! contact\" Australia \"hire\" OR \"looking for\"",
+      "\"Dynamics 365\" \"SharePoint Integration\" Australia employer phone email 2026",
+      "\"ACT! CRM\" \"Dynamics 365\" Australia consultant contact hire"
+    ],
+    "phone": "",
+    "email": "",
+    "consent_basis": "Public RFP/post from Freelancer.com; contact found via public directory",
+    "all_phones": [],
+    "all_emails": [],
+    "whatsapp_links": [],
+    "calendly_links": [],
+    "strategy_log": [
+      {
+        "label": "DDG:site:freelancer.com \"dynamics-sharepoint-integration\" employer profile",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Dynamics 365\" \"SharePoint\" \"ACT!\" freelancer Australia 2026 contact e",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"ACT! CRM\" \"Dynamics 365\" Australia consultant contact hire",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Dynamics 365\" \"SharePoint Integration\" Australia employer phone email",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Dynamics 365\" \"SharePoint\" \"ACT! contact\" Australia \"hire\" OR \"lookin",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      }
+    ],
+    "enriched_at": "2026-09-21T13:24:45.118097+00:00",
+    "status": "\u274c NOTHING"
+  },
+  {
+    "id": "madhava_gorrepati",
+    "company": "MaddiSoft / Neodym Technologies (NC DHHS)",
+    "contact_name": "Madhava Gorrepati",
+    "platform": "LinkedIn",
+    "source_url": "https://www.linkedin.com/posts/madhava-gorrepati-recruiter_hiring-powerplatform-powerapps-activity-7500677641361043456-2ogG",
+    "email_found": "madhava.gorrepati@maddisoft.com",
+    "requirement": "MS Power Platform Developer & Architect \u2014 NC DHHS, 12+ months",
+    "location": "Raleigh, NC, USA",
+    "timezone": "America/New_York",
+    "country_code": "+1",
+    "crawl_urls": [
+      "https://www.maddisoft.com",
+      "https://www.neodymtechnologies.com"
+    ],
+    "pdf_urls": [],
+    "ddg_queries": [
+      "\"Madhava Gorrepati\" phone OR mobile OR WhatsApp OR \"reach me\"",
+      "site:maddisoft.com phone OR contact OR \"reach us\" OR \"call us\"",
+      "site:neodymtechnologies.com phone OR contact",
+      "\"MaddiSoft\" site:clutch.co OR site:zoominfo.com phone",
+      "\"MaddiSoft Technologies\" site:manta.com OR site:yellowpages.com OR site:bbb.org phone",
+      "\"Madhava Gorrepati\" recruiter phone \"Power Platform\" Raleigh",
+      "\"MaddiSoft\" OR \"Neodym Technologies\" Raleigh NC phone contact"
+    ],
+    "phone": "",
+    "email": "madhava.gorrepati@maddisoft.com",
+    "consent_basis": "Public RFP/post from LinkedIn; contact found via public directory",
+    "all_phones": [],
+    "all_emails": [],
+    "whatsapp_links": [],
+    "calendly_links": [],
+    "strategy_log": [
+      {
+        "label": "DDG:site:neodymtechnologies.com phone OR contact",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Madhava Gorrepati\" phone OR mobile OR WhatsApp OR \"reach me\"",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:site:maddisoft.com phone OR contact OR \"reach us\" OR \"call us\"",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"MaddiSoft\" site:clutch.co OR site:zoominfo.com phone",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"MaddiSoft Technologies\" site:manta.com OR site:yellowpages.com OR sit",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Madhava Gorrepati\" recruiter phone \"Power Platform\" Raleigh",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"MaddiSoft\" OR \"Neodym Technologies\" Raleigh NC phone contact",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "CRAWL:https://www.neodymtechnologies.com",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "CRAWL:https://www.maddisoft.com",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      }
+    ],
+    "enriched_at": "2026-09-21T13:25:05.128026+00:00",
+    "status": "\u274c NOTHING"
+  },
+  {
+    "id": "afdb_rfp",
+    "company": "African Development Bank (AfDB)",
+    "contact_name": "S. Kamuanga-Tossou",
+    "platform": "RFP Board",
+    "source_url": "https://www.afdb.org/sites/default/files/corporate_procurement/rfp_-_configuration_of_microsoft_dynamics_365_crm_-adb-rfp-tcgs-2026-0205-_27_august_2026_0.pdf",
+    "email_found": "s.kamuanga-tossou@afdb.org",
+    "requirement": "Configuration of Microsoft Dynamics 365 CRM for Finance Complex (FIVP)",
+    "location": "Abidjan, C\u00f4te d'Ivoire",
+    "timezone": "Africa/Abidjan",
+    "country_code": "+225",
+    "crawl_urls": [
+      "https://www.afdb.org",
+      "https://www.afdb.org/en/about-us/contact-us"
+    ],
+    "pdf_urls": [
+      "https://www.afdb.org/sites/default/files/corporate_procurement/rfp_-_configuration_of_microsoft_dynamics_365_crm_-adb-rfp-tcgs-2026-0205-_27_august_2026_0.pdf"
+    ],
+    "ddg_queries": [
+      "\"Kamuanga-Tossou\" site:afdb.org phone OR contact OR extension",
+      "site:afdb.org \"procurement\" \"TCGS\" phone contact \"2026\"",
+      "\"African Development Bank\" procurement \"phone\" OR \"telephone\" OR \"+225\" contact",
+      "\"ADB/RFP/TCGS/2026/0205\" contact phone officer",
+      "\"Kamuanga\" \"African Development Bank\" site:linkedin.com",
+      "\"African Development Bank\" Abidjan \"+225\" phone contact procurement"
+    ],
+    "phone": "",
+    "email": "s.kamuanga-tossou@afdb.org",
+    "consent_basis": "Public RFP/post from RFP Board; contact found via public directory",
+    "all_phones": [],
+    "all_emails": [],
+    "whatsapp_links": [],
+    "calendly_links": [],
+    "strategy_log": [
+      {
+        "label": "PDF:https://www.afdb.org/sites/default/files/corporate_procureme",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"African Development Bank\" procurement \"phone\" OR \"telephone\" OR \"+225",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:site:afdb.org \"procurement\" \"TCGS\" phone contact \"2026\"",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "CRAWL:https://www.afdb.org",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "CRAWL:https://www.afdb.org/en/about-us/contact-us",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Kamuanga-Tossou\" site:afdb.org phone OR contact OR extension",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Kamuanga\" \"African Development Bank\" site:linkedin.com",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"ADB/RFP/TCGS/2026/0205\" contact phone officer",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"African Development Bank\" Abidjan \"+225\" phone contact procurement",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      }
+    ],
+    "enriched_at": "2026-09-21T13:25:05.920724+00:00",
+    "status": "\u274c NOTHING"
+  },
+  {
+    "id": "okotoks_rfp",
+    "company": "Town of Okotoks",
+    "contact_name": "IT Procurement Officer",
+    "platform": "RFP Board (Canada)",
+    "source_url": "https://starbridge.ai/rfp/microsoft-365-information-governance-and-sharepoint",
+    "email_found": "offres@pjcci.ca",
+    "requirement": "Microsoft 365 Information Governance & SharePoint Pilot Migration (due Oct 1, 2026)",
+    "location": "Okotoks, Alberta, Canada",
+    "timezone": "America/Denver",
+    "country_code": "+1",
+    "crawl_urls": [
+      "https://www.okotoks.ca",
+      "https://www.pjcci.ca"
+    ],
+    "pdf_urls": [],
+    "ddg_queries": [
+      "\"Town of Okotoks\" \"information technology\" OR \"IT department\" contact phone",
+      "site:okotoks.ca phone OR contact OR \"information technology\"",
+      "\"Town of Okotoks\" procurement \"phone\" OR \"tel\" OR \"call\"",
+      "site:pjcci.ca phone OR contact OR \"reach us\"",
+      "\"Okotoks\" \"Microsoft 365\" RFP contact phone \"2026\"",
+      "\"Town of Okotoks\" site:merx.com OR site:biddingo.com contact phone",
+      "\"Okotoks\" \"SharePoint\" contact email phone 2026"
+    ],
+    "phone": "",
+    "email": "offres@pjcci.ca",
+    "consent_basis": "Public RFP/post from RFP Board (Canada); contact found via public directory",
+    "all_phones": [],
+    "all_emails": [],
+    "whatsapp_links": [],
+    "calendly_links": [],
+    "strategy_log": [
+      {
+        "label": "DDG:site:pjcci.ca phone OR contact OR \"reach us\"",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:site:okotoks.ca phone OR contact OR \"information technology\"",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Okotoks\" \"Microsoft 365\" RFP contact phone \"2026\"",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Town of Okotoks\" site:merx.com OR site:biddingo.com contact phone",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "CRAWL:https://www.pjcci.ca",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Town of Okotoks\" procurement \"phone\" OR \"tel\" OR \"call\"",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Town of Okotoks\" \"information technology\" OR \"IT department\" contact ",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "DDG:\"Okotoks\" \"SharePoint\" contact email phone 2026",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "label": "CRAWL:https://www.okotoks.ca",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      }
+    ],
+    "enriched_at": "2026-09-21T13:25:07.714097+00:00",
+    "status": "\u274c NOTHING"
+  }
+]

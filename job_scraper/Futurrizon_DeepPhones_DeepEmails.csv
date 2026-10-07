@@ -1,0 +1,5 @@
+name,company,domain,best_email,confidence,status,mail_provider,detected_pattern
+Project Owner (AU),Freelancer.com Client (D365+SharePoint),freelancer.com,project.au@freelancer.com,0.65,most_likely_permutation,Google Workspace,{first_or_flast}
+IT Procurement Officer,Town of Okotoks,starbridge.ai,it.officer@starbridge.ai,0.65,most_likely_permutation,Google Workspace,
+Madhava Gorrepati,MaddiSoft / Neodym Technologies (NC DHHS project),linkedin.com,madhava.gorrepati@maddisoft.com,0.95,web_verified_direct,mail-a.linkedin.com,
+S. Kamuanga-Tossou,African Development Bank (AfDB),afdb.org,s.kamuanga-tossou@afdb.org,0.95,web_verified_direct,Mimecast Secure Gateway,{first_or_flast}

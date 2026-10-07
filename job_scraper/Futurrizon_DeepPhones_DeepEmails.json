@@ -1,0 +1,729 @@
+[
+  {
+    "id": "freelancer_d365",
+    "company": "Freelancer.com Client (D365+SharePoint)",
+    "contact_name": "Project Owner (AU)",
+    "platform": "Freelancer.com",
+    "source_url": "https://www.freelancer.com/projects/dot-net/dynamics-sharepoint-integration",
+    "email_found": "",
+    "requirement": "Dynamics 365 + SharePoint Integration, ACT! migration, Copilot ($50 AUD/hr)",
+    "location": "Australia",
+    "timezone": "Australia/Sydney",
+    "country_code": "+61",
+    "searches": [
+      "site:freelancer.com/projects \"dynamics-sharepoint-integration\" client profile contact",
+      "site:freelancer.com \"Dynamics 365\" \"SharePoint\" \"ACT!\" client \"employer\" profile contact",
+      "\"Dynamics 365\" \"SharePoint\" \"ACT!\" freelancer project contact email phone 2026",
+      "site:freelancer.com \"Dynamics 365\" \"SharePoint Integration\" \"ACT!\" employer phone email",
+      "\"Dynamics 365\" \"SharePoint\" \"ACT! contact\" Australia 2026 \"looking for\" \"hire\""
+    ],
+    "phone": "+6110431662488",
+    "email": "dhremployment@fairfaxcounty.gov.",
+    "consent_basis": "Public RFP/post from Freelancer.com; contact found via public directory",
+    "all_phones": [
+      "+6110431662488",
+      "+6110806003560",
+      "+6112299756232",
+      "+6113237584270",
+      "+6113454041497",
+      "+6116895999590",
+      "+6117075321483",
+      "+6117627005173",
+      "+6117879433539",
+      "+6119412580352",
+      "+61448241130988"
+    ],
+    "all_emails": [
+      "dhremployment@fairfaxcounty.gov.",
+      "sphilips@lightholderconsulting.com"
+    ],
+    "whatsapp_links": [],
+    "calendly_links": [],
+    "strategy_log": [
+      {
+        "strategy": 1,
+        "query": "site:freelancer.com/projects \"dynamics-sharepoint-integration\" client profile contact",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 2,
+        "query": "site:freelancer.com \"Dynamics 365\" \"SharePoint\" \"ACT!\" client \"employer\" profile contact",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 3,
+        "query": "\"Dynamics 365\" \"SharePoint\" \"ACT!\" freelancer project contact email phone 2026",
+        "phones": [
+          "+6110431662488",
+          "+6110806003560",
+          "+6112299756232",
+          "+6113237584270",
+          "+6113454041497",
+          "+6116895999590",
+          "+6117075321483",
+          "+6117627005173",
+          "+6117879433539",
+          "+6119412580352",
+          "+61448241130988"
+        ],
+        "emails": [
+          "sphilips@lightholderconsulting.com"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 4,
+        "query": "site:freelancer.com \"Dynamics 365\" \"SharePoint Integration\" \"ACT!\" employer phone email",
+        "phones": [],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 5,
+        "query": "\"Dynamics 365\" \"SharePoint\" \"ACT! contact\" Australia 2026 \"looking for\" \"hire\"",
+        "phones": [],
+        "emails": [
+          "dhremployment@fairfaxcounty.gov."
+        ],
+        "whatsapp": [],
+        "calendly": []
+      }
+    ],
+    "enriched_at": "2026-09-20T14:48:01.256095+00:00",
+    "status": "✅ PHONE",
+    "deep_email": {
+      "name": "Project Owner (AU)",
+      "company": "Freelancer.com Client (D365+SharePoint)",
+      "domain": "freelancer.com",
+      "best_email": "project.au@freelancer.com",
+      "confidence": 0.65,
+      "status": "most_likely_permutation",
+      "detected_pattern": "{first_or_flast}",
+      "pattern_stats": {
+        "pattern": "{first_or_flast}",
+        "sample_count": 2,
+        "pattern_matches": 2,
+        "confidence": 1.0
+      },
+      "mail_provider": "Google Workspace",
+      "mx_hosts": [
+        "aspmx.l.google.com",
+        "alt1.aspmx.l.google.com",
+        "alt2.aspmx.l.google.com",
+        "aspmx2.googlemail.com",
+        "aspmx3.googlemail.com",
+        "aspmx4.googlemail.com",
+        "aspmx5.googlemail.com"
+      ],
+      "web_citations": [
+        "jane@freelancer.com",
+        "sales@crannull.com.au",
+        "support@freelancer.com"
+      ],
+      "smtp_verified": false,
+      "is_catch_all": null,
+      "smtp_detail": "",
+      "timestamp": "2026-09-20T19:53:21.200544+00:00"
+    }
+  },
+  {
+    "id": "okotoks_rfp",
+    "company": "Town of Okotoks",
+    "contact_name": "IT Procurement Officer",
+    "platform": "RFP Board (Canada)",
+    "source_url": "https://starbridge.ai/rfp/microsoft-365-information-governance-and-sharepoint",
+    "email_found": "offres@pjcci.ca",
+    "requirement": "Microsoft 365 Information Governance & SharePoint Pilot Migration (due Oct 1, 2026)",
+    "location": "Okotoks, Alberta, Canada",
+    "timezone": "America/Denver",
+    "country_code": "+1",
+    "searches": [
+      "\"Town of Okotoks\" \"information technology\" OR \"IT department\" contact phone",
+      "site:okotoks.ca (phone OR contact OR \"IT\" OR \"information technology\")",
+      "\"Town of Okotoks\" procurement \"phone\" OR \"tel\" OR \"call\"",
+      "site:pjcci.ca phone OR contact OR \"reach us\"",
+      "\"Okotoks\" \"Microsoft 365\" RFP contact phone \"2026\"",
+      "\"Town of Okotoks\" site:merx.com OR site:biddingo.com contact phone",
+      "\"Okotoks\" \"information governance\" \"SharePoint\" contact email phone 2026"
+    ],
+    "phone": "+114441582000",
+    "email": "contact@company.com",
+    "consent_basis": "Public RFP/post from RFP Board (Canada); contact found via public directory",
+    "all_phones": [
+      "+114441582000",
+      "+118191854990",
+      "+118443815400",
+      "+122504240263",
+      "+14039384404",
+      "+1443347627268",
+      "+1443411131397",
+      "+1443523632544",
+      "+15550000000",
+      "+15873180019"
+    ],
+    "all_emails": [
+      "contact@company.com",
+      "contact@example.gov",
+      "hello@lumenit.ca",
+      "kfinlay@okotoks.ca",
+      "kfinlay@okotoks.catitle",
+      "mmak@okotoks.ca",
+      "municentre@okotoks.ca",
+      "support@bidsandtenders.ca",
+      "support@sstenligne.com",
+      "support@sstenligne.comtitle",
+      "vthhelp@okotoks.ca"
+    ],
+    "whatsapp_links": [],
+    "calendly_links": [],
+    "strategy_log": [
+      {
+        "strategy": 1,
+        "query": "\"Town of Okotoks\" \"information technology\" OR \"IT department\" contact phone",
+        "phones": [
+          "+118191854990",
+          "+14039384404"
+        ],
+        "emails": [
+          "municentre@okotoks.ca"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 2,
+        "query": "site:okotoks.ca (phone OR contact OR \"IT\" OR \"information technology\")",
+        "phones": [],
+        "emails": [
+          "vthhelp@okotoks.ca"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 3,
+        "query": "\"Town of Okotoks\" procurement \"phone\" OR \"tel\" OR \"call\"",
+        "phones": [
+          "+1443523632544"
+        ],
+        "emails": [
+          "kfinlay@okotoks.ca",
+          "mmak@okotoks.ca"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 4,
+        "query": "site:pjcci.ca phone OR contact OR \"reach us\"",
+        "phones": [
+          "+118443815400"
+        ],
+        "emails": [
+          "support@sstenligne.com"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 5,
+        "query": "\"Okotoks\" \"Microsoft 365\" RFP contact phone \"2026\"",
+        "phones": [
+          "+114441582000",
+          "+15550000000",
+          "+15873180019"
+        ],
+        "emails": [
+          "contact@example.gov",
+          "hello@lumenit.ca",
+          "support@bidsandtenders.ca"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 6,
+        "query": "\"Town of Okotoks\" site:merx.com OR site:biddingo.com contact phone",
+        "phones": [
+          "+122504240263",
+          "+1443347627268",
+          "+1443411131397",
+          "+1443523632544"
+        ],
+        "emails": [
+          "kfinlay@okotoks.ca",
+          "mmak@okotoks.ca"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 7,
+        "query": "\"Okotoks\" \"information governance\" \"SharePoint\" contact email phone 2026",
+        "phones": [
+          "+15550000000"
+        ],
+        "emails": [
+          "contact@company.com",
+          "contact@example.gov",
+          "support@bidsandtenders.ca"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      }
+    ],
+    "enriched_at": "2026-09-20T14:48:10.063985+00:00",
+    "status": "✅ PHONE",
+    "deep_email": {
+      "name": "IT Procurement Officer",
+      "company": "Town of Okotoks",
+      "domain": "starbridge.ai",
+      "best_email": "it.officer@starbridge.ai",
+      "confidence": 0.65,
+      "status": "most_likely_permutation",
+      "detected_pattern": null,
+      "pattern_stats": null,
+      "mail_provider": "Google Workspace",
+      "mx_hosts": [
+        "aspmx.l.google.com",
+        "alt1.aspmx.l.google.com",
+        "alt2.aspmx.l.google.com",
+        "alt3.aspmx.l.google.com",
+        "alt4.aspmx.l.google.com"
+      ],
+      "web_citations": [
+        "mmak@okotoks.ca"
+      ],
+      "smtp_verified": false,
+      "is_catch_all": null,
+      "smtp_detail": "",
+      "timestamp": "2026-09-20T19:53:34.037656+00:00"
+    }
+  },
+  {
+    "id": "madhava_gorrepati",
+    "company": "MaddiSoft / Neodym Technologies (NC DHHS project)",
+    "contact_name": "Madhava Gorrepati",
+    "platform": "LinkedIn",
+    "source_url": "https://www.linkedin.com/posts/madhava-gorrepati-recruiter_hiring-powerplatform-powerapps-activity-7500677641361043456-2ogG",
+    "email_found": "madhava.gorrepati@maddisoft.com",
+    "requirement": "MS Power Platform Developer & Architect — NC DHHS public health initiative, 12+ months",
+    "location": "Raleigh, NC, USA",
+    "timezone": "America/New_York",
+    "country_code": "+1",
+    "searches": [
+      "\"Madhava Gorrepati\" phone OR mobile OR WhatsApp OR \"reach me\"",
+      "site:maddisoft.com phone OR contact OR \"reach us\" OR \"call us\"",
+      "site:neodymtechnologies.com phone OR contact",
+      "\"Madhava Gorrepati\" site:xing.com OR site:github.com OR site:twitter.com contact",
+      "\"MaddiSoft\" OR \"Neodym Technologies\" site:clutch.co OR site:zoominfo.com phone",
+      "\"Madhava Gorrepati\" recruiter phone \"Power Platform\" Raleigh",
+      "\"MaddiSoft Technologies\" site:manta.com OR site:yellowpages.com OR site:bbb.org phone",
+      "site:linkedin.com/company \"maddisoft\" phone OR \"contact\" OR \"reach\""
+    ],
+    "phone": "+111261003356",
+    "email": "contact@maddisoft.com",
+    "consent_basis": "Public RFP/post from LinkedIn; contact found via public directory",
+    "all_phones": [
+      "+111261003356",
+      "+113127550251",
+      "+115150185902",
+      "+117277230801",
+      "+119094186951",
+      "+16143505050",
+      "+440113347202",
+      "+4401133472020",
+      "+441962735599",
+      "+912240500600",
+      "+917030107597",
+      "+918041228564"
+    ],
+    "all_emails": [
+      "contact@maddisoft.com",
+      "emailcontact@maddisoft.com",
+      "info@maddisoft.com",
+      "info@medisoft.co.uk",
+      "info@neodymtechnologies.com",
+      "info@powercozmo.com",
+      "info@teamyuva.com",
+      "madhav.madupu@gmail.com",
+      "madhav@neodymtechnologies.com",
+      "office@madisoft.com",
+      "privacy@maddisoft.com",
+      "webdexon@gmail.com"
+    ],
+    "whatsapp_links": [],
+    "calendly_links": [],
+    "strategy_log": [
+      {
+        "strategy": 1,
+        "query": "\"Madhava Gorrepati\" phone OR mobile OR WhatsApp OR \"reach me\"",
+        "phones": [
+          "+115150185902"
+        ],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 2,
+        "query": "site:maddisoft.com phone OR contact OR \"reach us\" OR \"call us\"",
+        "phones": [],
+        "emails": [
+          "contact@maddisoft.com",
+          "emailcontact@maddisoft.com",
+          "info@maddisoft.com"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 3,
+        "query": "site:neodymtechnologies.com phone OR contact",
+        "phones": [
+          "+16143505050"
+        ],
+        "emails": [
+          "info@neodymtechnologies.com"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 4,
+        "query": "\"Madhava Gorrepati\" site:xing.com OR site:github.com OR site:twitter.com contact",
+        "phones": [],
+        "emails": [
+          "madhav.madupu@gmail.com"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 5,
+        "query": "\"MaddiSoft\" OR \"Neodym Technologies\" site:clutch.co OR site:zoominfo.com phone",
+        "phones": [
+          "+441962735599",
+          "+912240500600",
+          "+917030107597",
+          "+918041228564"
+        ],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 6,
+        "query": "\"Madhava Gorrepati\" recruiter phone \"Power Platform\" Raleigh",
+        "phones": [],
+        "emails": [
+          "madhav@neodymtechnologies.com"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 7,
+        "query": "\"MaddiSoft Technologies\" site:manta.com OR site:yellowpages.com OR site:bbb.org phone",
+        "phones": [
+          "+111261003356",
+          "+113127550251",
+          "+117277230801",
+          "+119094186951"
+        ],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 8,
+        "query": "site:linkedin.com/company \"maddisoft\" phone OR \"contact\" OR \"reach\"",
+        "phones": [
+          "+440113347202",
+          "+4401133472020"
+        ],
+        "emails": [
+          "info@medisoft.co.uk",
+          "info@powercozmo.com",
+          "info@teamyuva.com",
+          "office@madisoft.com",
+          "privacy@maddisoft.com",
+          "webdexon@gmail.com"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      }
+    ],
+    "enriched_at": "2026-09-20T14:48:33.909848+00:00",
+    "status": "✅ PHONE",
+    "deep_email": {
+      "name": "Madhava Gorrepati",
+      "company": "MaddiSoft / Neodym Technologies (NC DHHS project)",
+      "domain": "linkedin.com",
+      "best_email": "madhava.gorrepati@maddisoft.com",
+      "confidence": 0.95,
+      "status": "web_verified_direct",
+      "detected_pattern": null,
+      "pattern_stats": null,
+      "mail_provider": "mail-a.linkedin.com",
+      "mx_hosts": [
+        "mail-a.linkedin.com",
+        "mail-c.linkedin.com",
+        "mail-d.linkedin.com",
+        "mail.linkedin.com"
+      ],
+      "web_citations": [
+        "ajay@neodymtechnologies.com",
+        "arun.elchuri@maddisoft.com",
+        "madhav@neodymtechnologies.com",
+        "madhava.gorrepati@maddisoft.com",
+        "privacy@maddisoft.com",
+        "shafi@neodymtechnologies.com"
+      ],
+      "smtp_verified": false,
+      "is_catch_all": null,
+      "smtp_detail": "",
+      "timestamp": "2026-09-20T19:53:43.776364+00:00"
+    }
+  },
+  {
+    "id": "afdb_rfp",
+    "company": "African Development Bank (AfDB)",
+    "contact_name": "S. Kamuanga-Tossou",
+    "platform": "RFP Board",
+    "source_url": "https://www.afdb.org/sites/default/files/corporate_procurement/rfp_-_configuration_of_microsoft_dynamics_365_crm_-adb-rfp-tcgs-2026-0205-_27_august_2026_0.pdf",
+    "email_found": "s.kamuanga-tossou@afdb.org",
+    "requirement": "Configuration of Microsoft Dynamics 365 CRM for Finance Complex (FIVP)",
+    "location": "Abidjan, Côte d'Ivoire",
+    "timezone": "Africa/Abidjan",
+    "country_code": "+225",
+    "searches": [
+      "\"Kamuanga-Tossou\" site:afdb.org phone OR contact OR extension",
+      "site:afdb.org \"procurement\" \"TCGS\" phone contact \"2026\"",
+      "\"African Development Bank\" procurement \"phone\" OR \"telephone\" OR \"+225\" contact",
+      "\"ADB/RFP/TCGS/2026/0205\" contact phone officer",
+      "\"Kamuanga\" \"African Development Bank\" site:linkedin.com",
+      "site:afdb.org \"contact us\" phone extension procurement",
+      "\"African Development Bank\" Abidjan \"01 BP 1387\" phone +225"
+    ],
+    "phone": "+22517778048217",
+    "email": "a.bdioui@afdb.org",
+    "consent_basis": "Public RFP/post from RFP Board; contact found via public directory",
+    "all_phones": [
+      "+22517778048217",
+      "+22519878330369",
+      "+22520204444",
+      "+22520261020",
+      "+22520261269",
+      "+22520262076",
+      "+22520263534",
+      "+22520263884",
+      "+22520263900",
+      "+22527202610",
+      "+22527202628",
+      "+22527202639",
+      "+225440927211802",
+      "+22561974675206",
+      "+225917341503106",
+      "+8801714162338",
+      "+917778048217"
+    ],
+    "all_emails": [
+      "a.bdioui@afdb.org",
+      "a.mubiru@afdb.org",
+      "aestap@afdb.org",
+      "afdb@afdb.org",
+      "civilsociety@afdb.org",
+      "corporate-procurement@afdb.org",
+      "corporateprocurement@afdb.org",
+      "corporateprocurementcomplaint@afdb.org.",
+      "d.vencatachellum@afdb.org",
+      "e.ehoura@afdb.org",
+      "economics-research@afdb.org",
+      "hrsystemsupport@afdb.org",
+      "idevhelpdesk@afdb.org",
+      "info@dgmarket.com",
+      "media@afdb.org",
+      "procurementpolicy@afdb.org",
+      "r.benmessaoud@afdb.org",
+      "s.kamuanga-tossou@afdb.org",
+      "sales@tenderdetail.com",
+      "tender@afdb.org",
+      "tender@afdb.org.",
+      "tender_assistance@afdb.org"
+    ],
+    "whatsapp_links": [],
+    "calendly_links": [],
+    "strategy_log": [
+      {
+        "strategy": 1,
+        "query": "\"Kamuanga-Tossou\" site:afdb.org phone OR contact OR extension",
+        "phones": [],
+        "emails": [
+          "media@afdb.org",
+          "s.kamuanga-tossou@afdb.org"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 2,
+        "query": "site:afdb.org \"procurement\" \"TCGS\" phone contact \"2026\"",
+        "phones": [
+          "+22527202610"
+        ],
+        "emails": [
+          "corporateprocurementcomplaint@afdb.org.",
+          "tender@afdb.org",
+          "tender@afdb.org.",
+          "tender_assistance@afdb.org"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 3,
+        "query": "\"African Development Bank\" procurement \"phone\" OR \"telephone\" OR \"+225\" contact",
+        "phones": [
+          "+22520261020",
+          "+22520263900"
+        ],
+        "emails": [
+          "corporate-procurement@afdb.org",
+          "corporateprocurement@afdb.org",
+          "procurementpolicy@afdb.org"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 4,
+        "query": "\"ADB/RFP/TCGS/2026/0205\" contact phone officer",
+        "phones": [
+          "+22517778048217",
+          "+8801714162338",
+          "+917778048217"
+        ],
+        "emails": [
+          "info@dgmarket.com",
+          "sales@tenderdetail.com",
+          "tender_assistance@afdb.org"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 5,
+        "query": "\"Kamuanga\" \"African Development Bank\" site:linkedin.com",
+        "phones": [
+          "+22519878330369",
+          "+225440927211802",
+          "+22561974675206",
+          "+225917341503106"
+        ],
+        "emails": [],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 6,
+        "query": "site:afdb.org \"contact us\" phone extension procurement",
+        "phones": [
+          "+22520261269",
+          "+22520262076",
+          "+22520263534",
+          "+22520263884"
+        ],
+        "emails": [
+          "a.bdioui@afdb.org",
+          "a.mubiru@afdb.org",
+          "aestap@afdb.org",
+          "civilsociety@afdb.org",
+          "d.vencatachellum@afdb.org",
+          "e.ehoura@afdb.org",
+          "hrsystemsupport@afdb.org",
+          "r.benmessaoud@afdb.org"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      },
+      {
+        "strategy": 7,
+        "query": "\"African Development Bank\" Abidjan \"01 BP 1387\" phone +225",
+        "phones": [
+          "+22520204444",
+          "+22520261020",
+          "+22527202628",
+          "+22527202639"
+        ],
+        "emails": [
+          "afdb@afdb.org",
+          "economics-research@afdb.org",
+          "idevhelpdesk@afdb.org"
+        ],
+        "whatsapp": [],
+        "calendly": []
+      }
+    ],
+    "enriched_at": "2026-09-20T14:48:36.824950+00:00",
+    "status": "✅ PHONE",
+    "deep_email": {
+      "name": "S. Kamuanga-Tossou",
+      "company": "African Development Bank (AfDB)",
+      "domain": "afdb.org",
+      "best_email": "s.kamuanga-tossou@afdb.org",
+      "confidence": 0.95,
+      "status": "web_verified_direct",
+      "detected_pattern": "{first_or_flast}",
+      "pattern_stats": {
+        "pattern": "{first_or_flast}",
+        "sample_count": 13,
+        "pattern_matches": 7,
+        "confidence": 0.54
+      },
+      "mail_provider": "Mimecast Secure Gateway",
+      "mx_hosts": [
+        "za-smtp-inbound-1.mimecast.co.za",
+        "za-smtp-inbound-2.mimecast.co.za"
+      ],
+      "web_citations": [
+        "a.a.diallo@afdb.org",
+        "a.auguin@eib.org",
+        "a.gaffuri@eib.org",
+        "afdb@afdb.org",
+        "annualmeetings@afdb.org",
+        "c.chahed@afdb.org",
+        "dedieui@afd.fr",
+        "e.anuforo@afdb.orf",
+        "e.anuforo@afdb.org",
+        "economics-research@afdb.org",
+        "evaluationweek@afdb.org",
+        "g.kiire@afdb.org",
+        "gamalk@africa-union.org",
+        "hrdirect@afdb.org",
+        "i.vovor@ext.eib.org",
+        "idevhelpdesk@afdb.org",
+        "investigations@piac-afdb.org",
+        "kamuanga-tossou@afdb.org",
+        "kaned@africa-union.org",
+        "lia.beyeler@oecd.org",
+        "media@afdb.org",
+        "press@eib.org",
+        "s.kamuanga-tossou@afdb.org",
+        "snober.abassi@un.org"
+      ],
+      "smtp_verified": false,
+      "is_catch_all": null,
+      "smtp_detail": "",
+      "timestamp": "2026-09-20T19:53:56.475523+00:00"
+    }
+  }
+]

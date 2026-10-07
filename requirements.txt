@@ -1,0 +1,10 @@
+httpx
+python-dotenv
+scrapling
+supabase
+pandas
+openpyxl
+curl_cffi
+playwright
+patchright
+python-jobspy
