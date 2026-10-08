@@ -834,11 +834,27 @@ async def main():
         log.info("")
             
         final_jobs = deduplicate(all_jobs)
+
+        # ── Universal JD Enrichment ──────────────────────────────────────
+        # Normalises every board's output to the exact schema consumed by
+        # matching/ingestion.py → JobProcessor.process(). Runs offline.
+        try:
+            from job_extraction.jd_enricher import enrich_batch, audit_coverage
+            log.info("Running universal JD enrichment pass...")
+            final_jobs = enrich_batch(final_jobs)
+            cov = audit_coverage(final_jobs)
+            for f in ["description", "posted_at", "salary_min", "work_mode", "experience_min"]:
+                log.info(f"  Field coverage [{f}]: {cov.get(f, 0):.1%}")
+        except ImportError:
+            log.warning("jd_enricher not found — skipping enrichment pass")
+        # ─────────────────────────────────────────────────────────────────
+
         if LOCAL_ONLY:
             with open(LOCAL_OUTPUT_FILE, "w", encoding="utf-8") as f:
                 json.dump(final_jobs, f, indent=2, ensure_ascii=False, default=str)
             log.info(f"Saved {len(final_jobs):,} total jobs into single JSON file: {LOCAL_OUTPUT_FILE}")
         log.info(f"Pipeline complete. Total jobs in active index: {len(final_jobs)}")
+
     
     else:
         final_jobs = []
