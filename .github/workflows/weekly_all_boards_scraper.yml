@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jobs-ats-${{ matrix.board }}
-          path: ${{ matrix.board }}_jobs_weekly.json
+          path: dashboard/${{ matrix.board }}_jobs_weekly.json
           if-no-files-found: ignore
 
   # 2. Scrape LinkedIn & Indeed for the 68 roles (Sharded)
@@ -102,8 +102,8 @@ jobs:
         with:
           name: jobs-${{ matrix.board }}-${{ strategy.job-index }}
           path: |
-            linkedin/linkedin_jobs/*shard*
-            indeed/indeed_jobs/*shard*
+            dashboard/linkedin/linkedin_jobs/*shard*
+            dashboard/indeed/indeed_jobs/*shard*
           if-no-files-found: ignore
 
   # 3. Merge everything and commit to repo
