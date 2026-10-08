@@ -3,10 +3,6 @@ name: Greenhouse Google Scraper
 on:
   workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: ./dashboard
-
 jobs:
   scrape-and-commit:
     runs-on: macos-latest

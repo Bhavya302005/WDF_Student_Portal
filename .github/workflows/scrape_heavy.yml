@@ -3,10 +3,6 @@ name: Daily Job Scraper (Heavy Boards Only)
 on:
   workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: ./dashboard
-
 jobs:
   scrape:
     runs-on: ubuntu-latest
