@@ -1,0 +1,53 @@
+name: 🧠 Universal JD Enrichment
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["🚀 Weekly Ultimate Scraper (All Boards + LI/Indeed)"]
+    types:
+      - completed
+
+jobs:
+  enrich-jobs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
+      - name: Run JD Enricher on all JSON files
+        run: |
+          cd dashboard
+          
+          echo "Starting Universal JD Enrichment for Matching Algorithm..."
+          
+          # Find all ATS json files and enrich them inline
+          for file in *_jobs_weekly.json; do
+            if [ -f "$file" ]; then
+              echo "----------------------------------------"
+              echo "Enriching $file..."
+              
+              # Run enricher and print the audit coverage to GitHub Actions log
+              python job_extraction/jd_enricher.py "$file" "$file"
+              python job_extraction/jd_enricher.py "$file" --audit
+            fi
+          done
+          
+          echo "----------------------------------------"
+          if [ -f "all_jobs_pipeline.json" ]; then
+            echo "Enriching all_jobs_pipeline.json..."
+            python job_extraction/jd_enricher.py all_jobs_pipeline.json all_jobs_pipeline.json
+          fi
+
+      - name: Commit and push enriched files
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "feat: run universal JD enrichment for matching algorithm 🧠"
+          file_pattern: 'dashboard/*.json'
+          commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
