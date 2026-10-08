@@ -3,6 +3,10 @@ name: Scrape Updated Boards (Workday, BambooHR, Greenhouse)
 on:
   workflow_dispatch:
 
+defaults:
+  run:
+    working-directory: ./dashboard
+
 jobs:
   # ── Workday: 4 parallel shards (each handles ~660 companies) ──────────
   scrape-workday:

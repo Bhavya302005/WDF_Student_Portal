@@ -3,6 +3,10 @@ name: Catch-up Scraper (Missed Boards)
 on:
   workflow_dispatch:
 
+defaults:
+  run:
+    working-directory: ./dashboard
+
 jobs:
   scrape:
     runs-on: ubuntu-latest

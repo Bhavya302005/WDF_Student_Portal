@@ -5,6 +5,10 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+defaults:
+  run:
+    working-directory: ./dashboard
+
 jobs:
   # 1. Run all job boards in parallel
   scrape:
