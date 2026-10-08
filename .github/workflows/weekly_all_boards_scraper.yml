@@ -41,12 +41,11 @@ jobs:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
           PYTHONUNBUFFERED: "1"
           MAX_CONCURRENT_JOBS: "800"
-          # Ensure full detail extraction and 1-week post time
-          WORKDAY_COMPANY_CONCURRENCY: "400"
-          WORKDAY_DETAIL_CONCURRENCY: "1000"
-          WORKDAY_TENANT_DETAIL_CONCURRENCY: "80"
-          WORKDAY_DETAIL_REQUEST_RATE: "500"
-          WORKDAY_SKIP_DETAILS: "false"
+          # Workday: skip per-JD detail fetching — 147k JDs at 2/s = never finishes.
+          # We collect all job listings (title, company, location, post_date) which
+          # is enough for the matching pipeline. Run a targeted JD pass separately.
+          WORKDAY_COMPANY_CONCURRENCY: "600"
+          WORKDAY_SKIP_DETAILS: "true"
           WORKDAY_POST_TIME: "week"
           BAMBOOHR_LIST_CONCURRENCY: "500"
           BAMBOOHR_DETAIL_CONCURRENCY: "200"
