@@ -121,7 +121,7 @@ jobs:
       - name: Download all job artifacts
         uses: actions/download-artifact@v4
         with:
-          path: scraped_data/
+          path: dashboard/scraped_data/
 
       - name: Consolidate and Merge Data
         run: |
@@ -196,5 +196,5 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Automated 1-Week Job Extraction (All Boards & 68 Roles) 🤖"
-          file_pattern: '*.json *.csv linkedin/linkedin_jobs/*.csv indeed/indeed_jobs/*.csv'
+          file_pattern: 'dashboard/*.json dashboard/*.csv dashboard/linkedin/linkedin_jobs/*.csv dashboard/indeed/indeed_jobs/*.csv'
           commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
