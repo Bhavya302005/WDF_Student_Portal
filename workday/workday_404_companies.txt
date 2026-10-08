@@ -1,0 +1,6 @@
+Emea,2
+Flsmidthcement,2
+Ossur,1
+Pace,2
+stevens,1
+xai,3
