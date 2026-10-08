@@ -125,23 +125,25 @@ jobs:
 
       - name: Consolidate and Merge Data
         run: |
-          # 1. Move the ATS JSON files to root
-          find scraped_data -name "*_jobs_weekly.json" -exec mv {} ./ \;
-          
+          # 1. Move the ATS JSON files to root (|| true so it doesn't fail if no ATS shards exist)
+          find scraped_data -name "*_jobs_weekly.json" -exec mv {} ./ \; || true
+
           # 2. Merge LinkedIn & Indeed shards into master CSVs
           python3 -c "
-          import json, glob, os, re, csv
+          import json, glob, os, re, csv, sys
+          # Make 'indeed' and 'linkedin' importable since CWD is dashboard/
+          sys.path.insert(0, os.getcwd())
           from indeed.indeed_68_roles import ROLES
 
           roles_sorted = sorted([r.lower() for r in ROLES], key=len, reverse=True)
-          strict_pattern = re.compile(r'\b(' + '|'.join(re.escape(r) for r in roles_sorted) + r')\b', re.IGNORECASE)
+          strict_pattern = re.compile(r'\\b(' + '|'.join(re.escape(r) for r in roles_sorted) + r')\\b', re.IGNORECASE)
 
           def write_csv(items, path):
               if not items: return
               fieldnames = list(items[0].keys())
               if 'Index_No' not in fieldnames: fieldnames = ['Index_No'] + fieldnames
               with open(path, 'w', encoding='utf-8', newline='') as fp:
-                  writer = csv.DictWriter(fp, fieldnames=fieldnames, quoting=csv.QUOTE_NONNUMERIC, escapechar='\\\\')
+                  writer = csv.DictWriter(fp, fieldnames=fieldnames, quoting=csv.QUOTE_NONNUMERIC, escapechar='\\\\\\\\')
                   writer.writeheader()
                   for idx, item in enumerate(items, start=1):
                       row = dict(item)
@@ -150,47 +152,55 @@ jobs:
 
           def read_shard(filepath):
               if filepath.endswith('.json'):
-                  with open(filepath, 'r', encoding='utf-8') as f: return json.load(f)
+                  with open(filepath, 'r', encoding='utf-8') as f:
+                      data = json.load(f)
+                      return data if isinstance(data, list) else []
               elif filepath.endswith('.csv'):
                   with open(filepath, 'r', encoding='utf-8') as f: return list(csv.DictReader(f))
               return []
 
           li_files = sorted(glob.glob('scraped_data/**/linkedin_shard_*_jobs.*', recursive=True))
           ind_files = sorted(glob.glob('scraped_data/**/indeed_shard_*_jobs.*', recursive=True))
-          
+          print(f'Found {len(li_files)} LinkedIn shard files, {len(ind_files)} Indeed shard files')
+
           li_jobs, ind_jobs, seen = [], [], set()
 
           for f in li_files:
               for j in read_shard(f):
-                  jid = j.get('id') or (j.get('title','')+j.get('company','')+j.get('location',''))
-                  if jid not in seen:
+                  jid = j.get('id') or (str(j.get('title',''))+str(j.get('company',''))+str(j.get('location','')))
+                  if jid and jid not in seen:
                       seen.add(jid); li_jobs.append(j)
 
           for f in ind_files:
               for j in read_shard(f):
-                  jid = j.get('id') or (j.get('title','')+j.get('company','')+j.get('location',''))
-                  if jid not in seen:
+                  jid = j.get('id') or (str(j.get('title',''))+str(j.get('company',''))+str(j.get('location','')))
+                  if jid and jid not in seen:
                       seen.add(jid); ind_jobs.append(j)
+
+          print(f'Merged: {len(li_jobs)} LinkedIn jobs, {len(ind_jobs)} Indeed jobs')
 
           if li_jobs:
               os.makedirs('linkedin/linkedin_jobs', exist_ok=True)
               write_csv(li_jobs, 'linkedin/linkedin_jobs/linkedin_68roles_jobs_us.csv')
               li_strict = [j for j in li_jobs if strict_pattern.search(str(j.get('job_title', '')))]
               write_csv(li_strict, 'linkedin/linkedin_jobs/linkedin_68roles_jobs_us_strict.csv')
+              print(f'LinkedIn: {len(li_jobs)} total, {len(li_strict)} strict')
 
           if ind_jobs:
               os.makedirs('indeed/indeed_jobs', exist_ok=True)
               write_csv(ind_jobs, 'indeed/indeed_jobs/indeed_68roles_jobs_us.csv')
               ind_strict = [j for j in ind_jobs if strict_pattern.search(str(j.get('job_title', '')))]
               write_csv(ind_strict, 'indeed/indeed_jobs/indeed_68roles_jobs_us_strict.csv')
+              print(f'Indeed: {len(ind_jobs)} total, {len(ind_strict)} strict')
 
           combined = li_jobs + ind_jobs
           combined_strict = [j for j in combined if strict_pattern.search(str(j.get('job_title', '')))]
           if combined:
               write_csv(combined, 'all_68roles_jobs_us.csv')
               write_csv(combined_strict, 'all_68roles_jobs_us_strict.csv')
+              print(f'Combined: {len(combined)} total, {len(combined_strict)} strict')
           "
-          rm -rf scraped_data
+          rm -rf scraped_data || true
 
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5

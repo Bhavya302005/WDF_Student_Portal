@@ -10,35 +10,44 @@ on:
 jobs:
   enrich-jobs:
     runs-on: ubuntu-latest
+    # Only auto-run if the triggering workflow actually succeeded
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          
-      - name: Run JD Enricher on all JSON files
+
+      - name: Install dependencies
+        working-directory: ./dashboard
         run: |
-          cd dashboard
-          
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run JD Enricher on all JSON files
+        working-directory: ./dashboard
+        run: |
           echo "Starting Universal JD Enrichment for Matching Algorithm..."
-          
+
           # Find all ATS json files and enrich them inline
-          for file in *_jobs_weekly.json; do
-            if [ -f "$file" ]; then
+          shopt -s nullglob
+          json_files=(*_jobs_weekly.json)
+          if [ ${#json_files[@]} -eq 0 ]; then
+            echo "No *_jobs_weekly.json files found in dashboard/. Skipping."
+          else
+            for file in "${json_files[@]}"; do
               echo "----------------------------------------"
               echo "Enriching $file..."
-              
-              # Run enricher and print the audit coverage to GitHub Actions log
               python job_extraction/jd_enricher.py "$file" "$file"
               python job_extraction/jd_enricher.py "$file" --audit
-            fi
-          done
-          
+            done
+          fi
+
           echo "----------------------------------------"
           if [ -f "all_jobs_pipeline.json" ]; then
             echo "Enriching all_jobs_pipeline.json..."
