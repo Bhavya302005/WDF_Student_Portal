@@ -30,6 +30,9 @@ defaults:
   run:
     working-directory: ./dashboard
 
+permissions:
+  contents: read
+
 jobs:
   # 1. Scrape ATS Boards (Lever, Greenhouse, Ashby, Workday, etc.)
   scrape-ats:
