@@ -186,7 +186,7 @@ jobs:
               if 'Index_No' not in fieldnames:
                   fieldnames = ['Index_No'] + fieldnames
               with open(path, 'w', encoding='utf-8', newline='') as fp:
-                  writer = csv.DictWriter(fp, fieldnames=fieldnames, quoting=csv.QUOTE_NONNUMERIC, escapechar='\\\\')
+                  writer = csv.DictWriter(fp, fieldnames=fieldnames, quoting=csv.QUOTE_NONNUMERIC)
                   writer.writeheader()
                   for idx, item in enumerate(items, start=1):
                       row = dict(item)

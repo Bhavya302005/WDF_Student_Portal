@@ -5,6 +5,26 @@ on:
     # Run every Sunday at midnight
     - cron: '0 0 * * 0'
   workflow_dispatch:
+    inputs:
+      run_scrape_ats:
+        description: 'Run ATS scraping stage'
+        required: true
+        default: true
+        type: boolean
+      run_scrape_li_indeed:
+        description: 'Run LinkedIn/Indeed scraping stage'
+        required: true
+        default: true
+        type: boolean
+      run_merge:
+        description: 'Run merge-and-commit stage'
+        required: true
+        default: true
+        type: boolean
+      reuse_artifacts_run_id:
+        description: 'Optional prior run ID to reuse artifacts for merge-only recovery'
+        required: false
+        type: string
 
 defaults:
   run:
@@ -13,6 +33,7 @@ defaults:
 jobs:
   # 1. Scrape ATS Boards (Lever, Greenhouse, Ashby, Workday, etc.)
   scrape-ats:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_scrape_ats }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -64,6 +85,7 @@ jobs:
 
   # 2. Scrape LinkedIn & Indeed for the 68 roles (Sharded)
   scrape-li-indeed:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_scrape_li_indeed }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -109,6 +131,12 @@ jobs:
   # 3. Merge everything and commit to repo
   merge-and-commit:
     needs: [scrape-ats, scrape-li-indeed]
+    if: >-
+      ${{
+        (github.event_name != 'workflow_dispatch' || inputs.run_merge) &&
+        (needs.scrape-ats.result == 'success' || needs.scrape-ats.result == 'skipped') &&
+        (needs.scrape-li-indeed.result == 'success' || needs.scrape-li-indeed.result == 'skipped')
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -118,10 +146,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download all job artifacts
+      - name: Download all job artifacts (current run)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.reuse_artifacts_run_id == '' }}
         uses: actions/download-artifact@v4
         with:
           path: dashboard/scraped_data/
+
+      - name: Download all job artifacts (previous run)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.reuse_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          path: dashboard/scraped_data/
+          run-id: ${{ inputs.reuse_artifacts_run_id }}
 
       - name: Consolidate and Merge Data
         run: |
