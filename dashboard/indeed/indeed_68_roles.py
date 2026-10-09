@@ -745,6 +745,15 @@ def main() -> None:
             return
         log.info(f"  Filtered to {len(roles_to_run)} role(s) by name: {roles_to_run}")
 
+    if args.start_idx or args.end_idx:
+        start_i = max(0, (args.start_idx or 1) - 1)
+        end_i = args.end_idx if args.end_idx is not None else len(roles_to_run)
+        roles_to_run = roles_to_run[start_i:end_i]
+
+    if args.limit:
+        roles_to_run = roles_to_run[:args.limit]
+        log.info(f"  Limited to top {len(roles_to_run)} role(s)")
+
     if args.shard:
         try:
             part, total = map(int, args.shard.split("/"))

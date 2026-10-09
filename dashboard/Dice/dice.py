@@ -24,6 +24,7 @@ Env vars (optional):
 """
 
 from __future__ import annotations
+import argparse
 import asyncio
 import hashlib
 import json
@@ -349,8 +350,20 @@ def extract_description_from_detail_html(html: str) -> str:
 # Scraper
 # ---------------------------------------------------------------------------
 class DiceScraper:
-    def __init__(self, filters: dict[str, str] | None = None):
+    def __init__(self, filters: dict[str, str] | None = None, roles: list[str] | None = None):
         self.filters = dict(filters or DEFAULT_FILTERS)
+        self.roles = list(roles) if roles else []
+
+        # Check env vars for roles
+        if not self.roles:
+            env_roles_limit = os.getenv("DICE_ROLES_LIMIT")
+            if env_roles_limit:
+                try:
+                    limit_n = int(env_roles_limit)
+                    from indeed.indeed_68_roles import ROLES
+                    self.roles = ROLES[:limit_n]
+                except Exception:
+                    pass
         
         # Extract maxPages so it doesn't get sent as a URL parameter
         self.max_pages = int(self.filters.pop("maxPages", "999999"))
@@ -362,13 +375,15 @@ class DiceScraper:
         else:
             self.filters["filters.postedDate"] = dice_date
 
-    def _build_url(self, page: int) -> str:
+    def _build_url(self, page: int, query: str | None = None) -> str:
         """Build the search URL for a given page number."""
         # Ignore filters that are empty or explicitly set to "false"
         active_filters = {
             k: v for k, v in self.filters.items() 
             if v and str(v).lower() != "false"
         }
+        if query:
+            active_filters["q"] = query.replace(" ", "+")
         params = "&".join(f"{k}={v}" for k, v in active_filters.items())
         return f"{BASE_SEARCH_URL}?{params}&page={page}"
 
@@ -396,10 +411,10 @@ class DiceScraper:
         return 0, ""
 
     async def _fetch_page(
-        self, client: httpx.AsyncClient, page: int
+        self, client: httpx.AsyncClient, page: int, query: str | None = None
     ) -> list[dict]:
         """Fetch a single search result page and extract job records."""
-        url = self._build_url(page)
+        url = self._build_url(page, query=query)
         status, body = await self._get(client, url)
         if status != 200 or not body:
             return []
@@ -429,52 +444,80 @@ class DiceScraper:
             http2=True,
         ) as client:
 
-            # --- Phase 1: Discover total pages from page 1 ---
-            url1 = self._build_url(1)
-            status, body = await self._get(client, url1)
-            if status != 200 or not body:
-                print("[FATAL] Could not fetch page 1")
-                return []
+            all_raw: list[dict] = []
+            seen_ids: set[str] = set()
 
-            first_page_jobs, page_count, total_results = \
-                extract_jobs_from_search_html(body)
-                
-            page_count = min(page_count, self.max_pages)
-            
-            print(f"\nTotal results: {total_results}  |  Pages: {page_count}")
-            print(f"Jobs on page 1: {len(first_page_jobs)}")
-
-            all_raw: list[dict] = list(first_page_jobs)
-            seen_ids: set[str] = {j.get("id", "") for j in all_raw}
-
-            # --- Phase 2: Fetch remaining pages concurrently ---
-            if page_count > 1:
-                remaining_pages = list(range(2, page_count + 1))
-                page_sem = asyncio.Semaphore(CONCURRENCY)
-                done_pages = 1
-
-                async def fetch_page_bounded(pg: int):
-                    nonlocal done_pages
-                    async with page_sem:
-                        jobs = await self._fetch_page(client, pg)
-                        done_pages += 1
-                        if done_pages % 10 == 0 or done_pages == page_count:
-                            print(f"  [{done_pages}/{page_count}] pages scraped …")
-                        return jobs
-
-                tasks = [fetch_page_bounded(p) for p in remaining_pages]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                for result in results:
-                    if isinstance(result, Exception):
+            if self.roles:
+                print(f"\nDice multi-role search: running {len(self.roles)} roles (max {self.max_pages} pages each)...")
+                for r_idx, role in enumerate(self.roles, start=1):
+                    url1 = self._build_url(1, query=role)
+                    status, body = await self._get(client, url1)
+                    if status != 200 or not body:
                         continue
-                    for job in result:
-                        jid = job.get("id", "")
+                    first_page_jobs, p_count, _ = extract_jobs_from_search_html(body)
+                    for j in first_page_jobs:
+                        jid = j.get("id", "")
                         if jid and jid not in seen_ids:
                             seen_ids.add(jid)
-                            all_raw.append(job)
+                            all_raw.append(j)
+                    p_to_fetch = min(p_count, self.max_pages)
+                    if p_to_fetch > 1:
+                        for p in range(2, p_to_fetch + 1):
+                            p_jobs = await self._fetch_page(client, p, query=role)
+                            for j in p_jobs:
+                                jid = j.get("id", "")
+                                if jid and jid not in seen_ids:
+                                    seen_ids.add(jid)
+                                    all_raw.append(j)
+                    if r_idx % 5 == 0 or r_idx == len(self.roles):
+                        print(f"  [{r_idx}/{len(self.roles)}] roles searched ({len(all_raw)} jobs so far)...")
+            else:
+                # --- Phase 1: Discover total pages from page 1 ---
+                url1 = self._build_url(1)
+                status, body = await self._get(client, url1)
+                if status != 200 or not body:
+                    print("[FATAL] Could not fetch page 1")
+                    return []
 
-            print(f"\n[done] {len(all_raw)} unique jobs collected from {page_count} pages")
+                first_page_jobs, page_count, total_results = \
+                    extract_jobs_from_search_html(body)
+                    
+                page_count = min(page_count, self.max_pages)
+                
+                print(f"\nTotal results: {total_results}  |  Pages: {page_count}")
+                print(f"Jobs on page 1: {len(first_page_jobs)}")
+
+                all_raw = list(first_page_jobs)
+                seen_ids = {j.get("id", "") for j in all_raw}
+
+                # --- Phase 2: Fetch remaining pages concurrently ---
+                if page_count > 1:
+                    remaining_pages = list(range(2, page_count + 1))
+                    page_sem = asyncio.Semaphore(CONCURRENCY)
+                    done_pages = 1
+
+                    async def fetch_page_bounded(pg: int):
+                        nonlocal done_pages
+                        async with page_sem:
+                            jobs = await self._fetch_page(client, pg)
+                            done_pages += 1
+                            if done_pages % 10 == 0 or done_pages == page_count:
+                                print(f"  [{done_pages}/{page_count}] pages scraped …")
+                            return jobs
+
+                    tasks = [fetch_page_bounded(p) for p in remaining_pages]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    for result in results:
+                        if isinstance(result, Exception):
+                            continue
+                        for job in result:
+                            jid = job.get("id", "")
+                            if jid and jid not in seen_ids:
+                                seen_ids.add(jid)
+                                all_raw.append(job)
+
+            print(f"\n[done] {len(all_raw)} unique jobs collected")
 
             # --- Phase 3: Normalize into our standard schema ---
             all_jobs: list[dict] = []
@@ -614,16 +657,44 @@ async def expire_stale_jobs():
 # Main
 # ---------------------------------------------------------------------------
 async def main():
-    scrape_start = datetime.now(timezone.utc).isoformat()
+    parser = argparse.ArgumentParser(description="Dice.com Scraper – RSC HTML Parser")
+    parser.add_argument("--limit", type=int, default=None, help="Scrape top N roles from the 68 roles list")
+    parser.add_argument("--role", type=str, default=None, help="Scrape a specific role")
+    parser.add_argument("--max-pages", type=int, default=None, help="Max pages per search query")
+    parser.add_argument("--post-time", type=str, default="week", help="Posted date filter: day, week, month, any")
+    parser.add_argument("--output", type=str, default=None, help="Output JSON path")
+    parser.add_argument("--no-supabase", action="store_true", help="Skip Supabase writes")
+    args = parser.parse_args()
+
+    roles = None
+    if args.role:
+        roles = [args.role]
+    elif args.limit:
+        try:
+            from indeed.indeed_68_roles import ROLES
+            roles = ROLES[:args.limit]
+        except Exception:
+            roles = None
+
+    filters = dict(DEFAULT_FILTERS)
+    if args.max_pages is not None:
+        filters["maxPages"] = str(args.max_pages)
+    if args.post_time:
+        SEARCH_ATTRIBUTES["post_time"] = args.post_time
+
+    skip_db = SKIP_SUPABASE or args.no_supabase
 
     print("=" * 60)
     print("Dice.com Scraper  –  RSC HTML Parser")
+    print(f"Roles to scrape   : {len(roles) if roles else 'Default query'}")
     print(f"Page concurrency  : {CONCURRENCY}")
     print(f"Desc concurrency  : {DESC_CONCURRENCY}")
-    print(f"Skip Supabase     : {SKIP_SUPABASE}")
+    print(f"Skip Supabase     : {skip_db}")
     print("=" * 60)
 
-    if not SKIP_SUPABASE:
+    scraper = DiceScraper(filters=filters, roles=roles)
+
+    if not skip_db:
         writer = SupabaseWriter()
         await writer.init()
 
@@ -645,28 +716,25 @@ async def main():
                     buf.clear()
 
         db_task = asyncio.create_task(db_writer())
-        scraper = DiceScraper()
         all_jobs = await scraper.scrape(write_queue)
         await db_task
     else:
-        scraper = DiceScraper()
         all_jobs = await scraper.scrape()
 
     print(f"\n{'=' * 60}")
-    print(f"Scrape complete — {len(all_jobs)} unique jobs (with descriptions)")
+    print(f"Scrape complete — {len(all_jobs)} unique jobs")
     print("=" * 60)
 
     # Save to file
-    if all_jobs:
-        out_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "all_dice_jobs.json"
-        )
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(JSON_DUMPS(all_jobs))
-        print(f"Saved {len(all_jobs)} jobs → {out_path}")
+    out_path = args.output or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "all_dice_jobs.json"
+    )
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(JSON_DUMPS(all_jobs))
+    print(f"Saved {len(all_jobs)} jobs → {out_path}")
 
     # Expiration cleanup
-    if not SKIP_SUPABASE:
+    if not skip_db:
         print("\nRunning expiration cleanup …")
         await expire_stale_jobs()
 
