@@ -163,9 +163,18 @@ jobs:
       - name: Merge all shards into master datasets
         run: |
           python3 -c "
-          import json, glob, os, re, csv
+          import ast, json, glob, os, re, csv
           from pathlib import Path
-          from indeed.indeed_68_roles import ROLES
+
+          source = Path('indeed/indeed_68_roles.py').read_text(encoding='utf-8')
+          tree = ast.parse(source)
+          roles_node = next(
+              node for node in tree.body
+              if isinstance(node, (ast.Assign, ast.AnnAssign))
+              and ((isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'ROLES' for t in node.targets))
+                   or (isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == 'ROLES'))
+          )
+          ROLES = ast.literal_eval(roles_node.value)
 
           roles_sorted = sorted([r.lower() for r in ROLES], key=len, reverse=True)
           strict_pattern = re.compile(r'\b(' + '|'.join(re.escape(r) for r in roles_sorted) + r')\b', re.IGNORECASE)
