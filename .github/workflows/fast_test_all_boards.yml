@@ -175,6 +175,8 @@ jobs:
     permissions:
       contents: write
       actions: read
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -271,6 +273,50 @@ jobs:
               print(f'Combined: {len(combined)} total, {len(combined_strict)} strict')
           "
           rm -rf scraped_data || true
+
+      - name: Install psycopg for Neon upsert
+        run: pip install "psycopg[binary]"
+
+      - name: Push jobs to Neon (public.jobs)
+        run: |
+          python3 -c "
+          import json, glob, csv, os, sys
+          sys.path.insert(0, '.')
+          from db.neon_upsert import save_jobs
+
+          all_jobs = []
+
+          # Load ATS JSON boards
+          for f in glob.glob('*.json'):
+              try:
+                  data = json.load(open(f, encoding='utf-8'))
+                  jobs = data if isinstance(data, list) else []
+                  board = f.replace('_jobs_weekly.json', '')
+                  for j in jobs:
+                      j.setdefault('source_board', board)
+                  all_jobs.extend(jobs)
+                  print(f'Loaded {len(jobs)} jobs from {f}')
+              except Exception as e:
+                  print(f'Skip {f}: {e}')
+
+          # Load LinkedIn / Indeed CSVs
+          for f in glob.glob('linkedin/linkedin_jobs/linkedin_68roles_jobs_us.csv') + glob.glob('indeed/indeed_jobs/indeed_68roles_jobs_us.csv'):
+              try:
+                  rows = list(csv.DictReader(open(f, encoding='utf-8')))
+                  board = 'LinkedIn' if 'linkedin' in f else 'Indeed'
+                  for r in rows:
+                      r.setdefault('source_board', board)
+                  all_jobs.extend(rows)
+                  print(f'Loaded {len(rows)} rows from {f}')
+              except Exception as e:
+                  print(f'Skip {f}: {e}')
+
+          print(f'Total jobs to upsert: {len(all_jobs)}')
+          n = save_jobs(all_jobs)
+          print(f'Neon upsert complete: {n} rows')
+          "
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
 
       - name: Pull latest changes (rebase to avoid diverged history)
         run: git pull --rebase --autostash origin main
