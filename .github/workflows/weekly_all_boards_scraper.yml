@@ -252,6 +252,11 @@ jobs:
           "
           rm -rf scraped_data || true
 
+      - name: Pull latest changes (rebase to avoid diverged history)
+        run: |
+          git fetch origin main
+          git rebase origin/main || git rebase --abort
+
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
