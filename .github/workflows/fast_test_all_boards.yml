@@ -325,5 +325,5 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Fast validation run: merged jobs (100 companies + 30 roles) 🤖"
-          file_pattern: 'dashboard/*.csv dashboard/linkedin/linkedin_jobs/*.csv dashboard/indeed/indeed_jobs/*.csv'
+          file_pattern: 'dashboard/*_strict.csv dashboard/linkedin/linkedin_jobs/*_strict.csv dashboard/indeed/indeed_jobs/*_strict.csv'
           commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
