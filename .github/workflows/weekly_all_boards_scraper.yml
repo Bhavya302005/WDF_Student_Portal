@@ -258,6 +258,7 @@ jobs:
         run: pip install "psycopg[binary]"
 
       - name: Push jobs to Neon (public.jobs)
+        continue-on-error: true
         run: |
           python3 -c "
           import json, glob, csv, os, sys
