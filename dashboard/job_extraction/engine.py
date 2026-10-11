@@ -445,11 +445,11 @@ def project(raw, result, text, original, source, key):
     exp = max(experiences, key=lambda item: item.get('min') or 0) if experiences else None
     out = dict(raw)
     out.update(description=text, description_raw=original, extraction=result,
-               salary=selected['text'] if selected else '',
-               salary_min=selected['min'] if selected else None,
-               salary_max=selected['max'] if selected else None,
-               salary_currency=(selected['currency'] or '') if selected else '',
-               salary_period=selected['period'] if selected else None,
+               salary=selected['text'] if selected else (raw.get('salary') or ''),
+               salary_min=selected['min'] if (selected and selected.get('min') is not None) else raw.get('salary_min'),
+               salary_max=selected['max'] if (selected and selected.get('max') is not None) else raw.get('salary_max'),
+               salary_currency=(selected['currency'] or '') if selected else (raw.get('salary_currency') or ''),
+               salary_period=selected['period'] if (selected and selected.get('period')) else raw.get('salary_period'),
                skills=', '.join(names), skills_required=list(dict.fromkeys(s['name'] for s in result['skills'] if s['requirement'] == 'required')),
                skills_preferred=list(dict.fromkeys(s['name'] for s in result['skills'] if s['requirement'] == 'preferred')),
                work_mode=result['work_mode']['value'] or '', job_type=result['job_type']['value'] or '',
