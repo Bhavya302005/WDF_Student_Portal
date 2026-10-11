@@ -274,8 +274,84 @@ jobs:
           "
           rm -rf scraped_data || true
 
+      - name: Build final Excel + CSV deliverables
+        run: |
+          pip install openpyxl --quiet
+          python3 -c "
+          import re, os, pandas as pd
+
+          ILLEGAL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x84\x86-\x9f\ud800-\udfff\ufffe\uffff]')
+
+          def load_csv(path):
+              if not os.path.exists(path):
+                  return pd.DataFrame()
+              return pd.read_csv(path, dtype=str)
+
+          def clean(df):
+              for col in df.columns:
+                  df[col] = df[col].astype(str).str.replace(r'\r\n|\r|\n', ' ', regex=True)
+                  df[col] = df[col].apply(lambda x: ILLEGAL.sub('', x))
+              return df
+
+          li_all    = load_csv('linkedin/linkedin_jobs/linkedin_68roles_jobs_us.csv')
+          li_strict = load_csv('linkedin/linkedin_jobs/linkedin_68roles_jobs_us_strict.csv')
+          in_all    = load_csv('indeed/indeed_jobs/indeed_68roles_jobs_us.csv')
+          in_strict = load_csv('indeed/indeed_jobs/indeed_68roles_jobs_us_strict.csv')
+
+          strict_li  = li_strict.copy() if not li_strict.empty else pd.DataFrame()
+          strict_ind = in_strict.copy() if not in_strict.empty else pd.DataFrame()
+
+          strict_ids = set()
+          if not li_strict.empty and 'id' in li_strict.columns:
+              strict_ids |= set(li_strict['id'].dropna())
+          if not in_strict.empty and 'id' in in_strict.columns:
+              strict_ids |= set(in_strict['id'].dropna())
+
+          other_li  = li_all[~li_all['id'].isin(strict_ids)].copy()  if not li_all.empty  else pd.DataFrame()
+          other_ind = in_all[~in_all['id'].isin(strict_ids)].copy()  if not in_all.empty  else pd.DataFrame()
+
+          os.makedirs('deliverables', exist_ok=True)
+
+          with pd.ExcelWriter('deliverables/strict_jobs.xlsx', engine='openpyxl') as w:
+              clean(strict_li).reset_index(drop=True).to_excel(w, sheet_name='LinkedIn', index=False)
+              clean(strict_ind).reset_index(drop=True).to_excel(w, sheet_name='Indeed',   index=False)
+          print(f'strict_jobs.xlsx  → LinkedIn: {len(strict_li)}, Indeed: {len(strict_ind)}')
+
+          with pd.ExcelWriter('deliverables/other_jobs.xlsx', engine='openpyxl') as w:
+              clean(other_li).reset_index(drop=True).to_excel(w, sheet_name='LinkedIn', index=False)
+              clean(other_ind).reset_index(drop=True).to_excel(w, sheet_name='Indeed',   index=False)
+          print(f'other_jobs.xlsx   → LinkedIn: {len(other_li)}, Indeed: {len(other_ind)}')
+
+          strict_all = pd.concat([strict_li, strict_ind], ignore_index=True)
+          if 'id' in strict_all.columns:
+              strict_all = strict_all.drop_duplicates(subset=['id'], keep='first')
+          strict_all.insert(0, 'Index_No', range(1, len(strict_all)+1))
+          clean(strict_all).to_csv('deliverables/strict_jobs.csv', index=False)
+          print(f'strict_jobs.csv   → {len(strict_all)} rows')
+
+          other_all = pd.concat([other_li, other_ind], ignore_index=True)
+          if 'id' in other_all.columns:
+              other_all = other_all.drop_duplicates(subset=['id'], keep='first')
+          other_all.insert(0, 'Index_No', range(1, len(other_all)+1))
+          clean(other_all).to_csv('deliverables/other_jobs.csv', index=False)
+          print(f'other_jobs.csv    → {len(other_all)} rows')
+          "
+
+      - name: Upload final job deliverables
+        uses: actions/upload-artifact@v4
+        with:
+          name: job-results
+          path: |
+            dashboard/deliverables/strict_jobs.xlsx
+            dashboard/deliverables/other_jobs.xlsx
+            dashboard/deliverables/strict_jobs.csv
+            dashboard/deliverables/other_jobs.csv
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Install psycopg for Neon upsert
         run: pip install "psycopg[binary]"
+
 
       - name: Push jobs to Neon (public.jobs)
         continue-on-error: true
