@@ -115,9 +115,9 @@ jobs:
         timeout-minutes: 360
         run: |
           if [ "${{ matrix.board }}" = "linkedin" ]; then
-            python linkedin/linkedin_68_roles.py --post-time week --location "Canada" --shard "${{ matrix.shard }}" --fast --max-results all
+            python linkedin/linkedin_68_roles.py --post-time 3week --location "Canada" --shard "${{ matrix.shard }}" --fast --max-results all
           else
-            python indeed/indeed_68_roles.py --post-time week --location "Canada" --country canada --shard "${{ matrix.shard }}" --fast --max-results all
+            python indeed/indeed_68_roles.py --post-time 3week --location "Canada" --country canada --shard "${{ matrix.shard }}" --fast --max-results all
           fi
         env:
           PYTHONUNBUFFERED: "1"
