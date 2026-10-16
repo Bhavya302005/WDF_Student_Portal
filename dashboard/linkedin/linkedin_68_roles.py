@@ -197,7 +197,9 @@ HOT_STREAK_ROLES     = 4      # roles to stay on hot cooldown after a 429
 BACKOFF_429_SEC      = 360    # hard 6-min pause on 429 detection (longer than Indeed)
 
 # -- Parallel description fetching --------------------------------------------
-DESC_WORKERS         = 32     # concurrent threads for description fetching
+DESC_WORKERS         = 8      # LinkedIn throttles aggressive detail-page bursts
+DESC_RETRY_WORKERS   = 3      # slower second pass for jobs missed on the first pass
+DESC_RETRY_DELAY     = 8      # cooldown before the second description pass
 DESC_TIMEOUT         = 15     # seconds per description request
 DESC_RETRIES         = 2      # retries per failed description fetch
 
@@ -262,6 +264,20 @@ def clean_num(val: Any) -> Any:
     if isinstance(val, float) and math.isnan(val):
         return None
     return val
+
+
+def clean_bool(val: Any) -> bool | None:
+    """Preserve true/false values without treating pandas NaN as true."""
+    if val is None or (isinstance(val, float) and math.isnan(val)):
+        return None
+    if isinstance(val, bool):
+        return val
+    text = str(val).strip().lower()
+    if text in {"true", "1", "yes"}:
+        return True
+    if text in {"false", "0", "no"}:
+        return False
+    return None
 
 
 # -- State management ---------------------------------------------------------
@@ -473,6 +489,39 @@ def async_fetch_descriptions(
     return jobs
 
 
+def fetch_descriptions_with_retry(jobs: list[dict], workers: int = DESC_WORKERS) -> list[dict]:
+    """Fetch detail text, then retry only unresolved jobs at lower concurrency."""
+    async_fetch_descriptions(jobs, workers=workers)
+    missing = [j for j in jobs if len(str(j.get("description") or "")) < 200]
+    if missing:
+        log.info(
+            "    Retrying %d missing descriptions with %d workers after %ds...",
+            len(missing), DESC_RETRY_WORKERS, DESC_RETRY_DELAY,
+        )
+        time.sleep(DESC_RETRY_DELAY)
+        async_fetch_descriptions(missing, workers=DESC_RETRY_WORKERS)
+    return jobs
+
+
+def enrich_jobs_after_details(jobs: list[dict]) -> list[dict]:
+    """Run structured extraction only after the best description is available."""
+    enriched: list[dict] = []
+    for job in jobs:
+        try:
+            candidate = dict(job)
+            # CSV reloads serialize the evidence object as text. Discard that
+            # stale representation and rebuild it from the final description.
+            if not isinstance(candidate.get("extraction"), dict):
+                candidate.pop("extraction", None)
+            result = sanitize(enrich_raw_job(candidate))
+            result.pop("structured_fields", None)
+            enriched.append(result)
+        except Exception as exc:
+            log.debug("    Structured extraction failed for %s: %s", job.get("id"), exc)
+            enriched.append(sanitize(job))
+    return enriched
+
+
 # -- Supabase (optional) ------------------------------------------------------
 
 def upsert_to_supabase(jobs: list[dict]) -> None:
@@ -628,6 +677,24 @@ def scrape_role(
             else:
                 date_str = None
 
+            salary_min = clean_num(row.get("min_amount"))
+            salary_max = clean_num(row.get("max_amount"))
+            salary_currency = str(row.get("currency") or "")
+            job_type = str(row.get("job_type") or "").strip()
+            is_remote = clean_bool(row.get("is_remote"))
+            structured_fields: dict[str, Any] = {}
+            if salary_min is not None or salary_max is not None:
+                structured_fields["salary"] = {
+                    "min": salary_min,
+                    "max": salary_max,
+                    "currency": salary_currency or None,
+                    "period": str(row.get("interval") or "") or None,
+                }
+            if job_type:
+                structured_fields["job_type"] = job_type
+            if is_remote:
+                structured_fields["work_mode"] = "remote"
+
             raw_job: dict[str, Any] = {
                 "id":              job_id,
                 "search_role":     role,
@@ -637,23 +704,21 @@ def scrape_role(
                 "job_url":         url,
                 "apply_url":       str(row.get("job_url_direct") or url),
                 "description":     desc,
-                "salary_min":      clean_num(row.get("min_amount")),
-                "salary_max":      clean_num(row.get("max_amount")),
-                "salary_currency": str(row.get("currency") or ""),
-                "job_type":        (str(row.get("job_type") or "").lower().replace(" ", "_") or "full_time"),
-                "is_remote":       bool(row.get("is_remote", False)),
+                "salary_min":      salary_min,
+                "salary_max":      salary_max,
+                "salary_currency": salary_currency,
+                "job_type":        job_type,
+                "is_remote":       is_remote,
+                "structured_fields": structured_fields,
                 "source_board":    "LinkedIn",
                 "scraper_type":    "jobspy",
                 "created_at":      date_str,
                 "scraped_at":      datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
             }
 
-            try:
-                job = enrich_raw_job(raw_job)
-            except Exception:
-                job = raw_job
-
-            all_jobs.append(sanitize(job))
+            # Detail fetching happens below. Extracting here would permanently
+            # project empty skills/experience from a search-result summary.
+            all_jobs.append(sanitize(raw_job))
             new_in_batch += 1
 
         log.info(
@@ -665,7 +730,11 @@ def scrape_role(
         # Parallel description fetch for this page's new jobs
         if fetch_description and new_in_batch > 0:
             page_new = all_jobs[-new_in_batch:]
-            all_jobs[-new_in_batch:] = async_fetch_descriptions(page_new, workers=desc_workers)
+            page_new = fetch_descriptions_with_retry(page_new, workers=desc_workers)
+            all_jobs[-new_in_batch:] = enrich_jobs_after_details(page_new)
+        elif new_in_batch > 0:
+            page_new = all_jobs[-new_in_batch:]
+            all_jobs[-new_in_batch:] = enrich_jobs_after_details(page_new)
 
         # Short page = last page (LinkedIn signals end of results this way)
         if batch_len < BATCH_SIZE:
