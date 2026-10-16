@@ -47,8 +47,9 @@ Notes on LinkedIn vs Indeed
     The cooldown values here are tuned HIGHER to be respectful.
   - LinkedIn does not use a `country_indeed` parameter; geo-filtering
     is done via the `location` field only ("United States" works best).
-  - JobSpy's linkedin support uses `linkedin_fetch_description=True`
-    to pull full job descriptions where available (slight extra latency).
+  - Search cards are collected through JobSpy, then each job page is fetched
+    once to recover JSON-LD, job criteria, the direct apply URL, and the full
+    description before matching fields are derived.
   - LinkedIn's hard cap via JobSpy is typically ~1000 results/query.
 
 Requirements
@@ -68,11 +69,13 @@ import random
 import hashlib
 import logging
 import argparse
+import html as html_lib
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 # -- Dependency checks --------------------------------------------------------
 try:
@@ -105,9 +108,19 @@ except ImportError:
 try:
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from scraper_utils import enrich_raw_job  # type: ignore
+    from job_extraction.jd_enricher import (  # type: ignore
+        enrich as enrich_matching_fields,
+        split_jd_sections,
+    )
 except Exception:
     def enrich_raw_job(j: dict) -> dict:  # type: ignore[misc]
         return j
+
+    def enrich_matching_fields(j: dict) -> dict:  # type: ignore[misc]
+        return j
+
+    def split_jd_sections(description: str) -> dict[str, str]:  # type: ignore[misc]
+        return {}
 
 # -- 68 Roles -----------------------------------------------------------------
 
@@ -350,7 +363,11 @@ def append_jobs_to_disk(new_jobs: list[dict]) -> None:
         if write_header:
             writer.writeheader()
         for idx, job in enumerate(new_jobs, start=start_idx + 1):
-            row = dict(job)
+            row = {
+                key: json.dumps(value, ensure_ascii=False)
+                if isinstance(value, (dict, list)) else value
+                for key, value in job.items()
+            }
             row["Index_No"] = idx
             writer.writerow(row)
 
@@ -388,16 +405,244 @@ def export_strict_datasets() -> None:
         log.warning(f"Could not export strict dataset: {e}")
 
 
-# -- Parallel description fetching -------------------------------------------
+# -- Parallel LinkedIn detail fetching ---------------------------------------
 
-def _fetch_one_description(url: str) -> str:
-    """
-    Fetch the full text description from a LinkedIn job URL.
-    Tries to extract the description div from the HTML.
-    Returns empty string on failure.
-    """
+_DETAIL_FIELDS = (
+    "description", "job_title", "company", "location", "posted_at",
+    "apply_url", "job_type", "experience", "work_mode", "is_remote",
+    "salary", "salary_min", "salary_max", "salary_currency", "salary_period",
+    "skills", "education_requirements",
+    "basic_qualifications", "preferred_qualifications", "key_responsibilities",
+    "job_function", "company_industry",
+)
+
+
+def _clean_detail_text(value: Any, *, preserve_lines: bool = False) -> str:
+    """Convert an HTML fragment to readable text while retaining JD headings."""
+    if not value:
+        return ""
+    raw = html_lib.unescape(str(value))
+    try:
+        from bs4 import BeautifulSoup
+
+        text = BeautifulSoup(raw, "html.parser").get_text(
+            "\n" if preserve_lines else " ", strip=True
+        )
+    except ImportError:
+        text = re.sub(r"<(?:br|/p|/li|/h[1-6])[^>]*>", "\n", raw, flags=re.I)
+        text = re.sub(r"<[^>]+>", " ", text)
+    if preserve_lines:
+        lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()]
+        return "\n".join(line for line in lines if line)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _job_postings(value: Any):
+    """Yield JobPosting objects from JSON-LD objects, lists, and @graph blocks."""
+    if isinstance(value, list):
+        for item in value:
+            yield from _job_postings(item)
+        return
+    if not isinstance(value, dict):
+        return
+    item_type = value.get("@type")
+    types = item_type if isinstance(item_type, list) else [item_type]
+    if any(str(t).lower() == "jobposting" for t in types if t):
+        yield value
+    yield from _job_postings(value.get("@graph"))
+
+
+def _json_ld_text(value: Any) -> str:
+    """Render schema.org text/list/object values without serializing raw JSON."""
+    if isinstance(value, list):
+        return "\n".join(filter(None, (_json_ld_text(item) for item in value)))
+    if isinstance(value, dict):
+        for key in ("description", "name", "value", "credentialCategory"):
+            if value.get(key):
+                return _json_ld_text(value[key])
+        return ""
+    return _clean_detail_text(value, preserve_lines=True)
+
+
+def _json_ld_location(posting: dict[str, Any]) -> str:
+    locations = posting.get("jobLocation") or []
+    if isinstance(locations, dict):
+        locations = [locations]
+    rendered: list[str] = []
+    for item in locations if isinstance(locations, list) else []:
+        if not isinstance(item, dict):
+            continue
+        address = item.get("address") or item
+        if not isinstance(address, dict):
+            continue
+        country = address.get("addressCountry")
+        if isinstance(country, dict):
+            country = country.get("name") or country.get("value")
+        parts = [
+            address.get("addressLocality"),
+            address.get("addressRegion"),
+            country,
+        ]
+        location = ", ".join(str(part).strip() for part in parts if part)
+        if location and location not in rendered:
+            rendered.append(location)
+    return "; ".join(rendered)
+
+
+def _json_ld_salary(posting: dict[str, Any]) -> dict[str, Any]:
+    base = posting.get("baseSalary")
+    if not isinstance(base, dict):
+        return {}
+    value = base.get("value")
+    value = value if isinstance(value, dict) else {}
+    low = value.get("minValue")
+    high = value.get("maxValue")
+    if low is None and high is None and isinstance(value.get("value"), (int, float)):
+        low = high = value["value"]
+    for name, amount in (("low", low), ("high", high)):
+        if isinstance(amount, str):
+            try:
+                parsed = float(amount.replace(",", "").strip())
+                if name == "low":
+                    low = parsed
+                else:
+                    high = parsed
+            except ValueError:
+                pass
+    if low is None and high is None:
+        return {}
+    currency = base.get("currency") or value.get("currency")
+    unit = str(value.get("unitText") or "").lower()
+    period = {
+        "hour": "hour", "hourly": "hour", "day": "day", "daily": "day",
+        "week": "week", "weekly": "week", "month": "month", "monthly": "month",
+        "year": "year", "yearly": "year", "annual": "year",
+    }.get(unit)
+    result = {
+        "salary_min": low,
+        "salary_max": high,
+        "salary_currency": currency,
+        "salary_period": period,
+    }
+    amount = " - ".join(str(v) for v in (low, high) if v is not None)
+    result["salary"] = " ".join(part for part in (str(currency or ""), amount, f"per {period}" if period else "") if part)
+    return result
+
+
+def _employment_type(value: Any) -> str:
+    if isinstance(value, list):
+        value = next((item for item in value if item), "")
+    normalized = re.sub(r"[_-]+", " ", str(value or "")).strip().lower()
+    mapping = {
+        "full time": "full time", "part time": "part time",
+        "contractor": "contract", "contract": "contract",
+        "temporary": "temporary", "intern": "internship", "internship": "internship",
+    }
+    return mapping.get(normalized, normalized)
+
+
+def _parse_linkedin_detail_html(page_html: str) -> dict[str, Any]:
+    """Extract every useful, explicitly published field from a LinkedIn job page."""
+    details: dict[str, Any] = {}
+    posting: dict[str, Any] = {}
+
+    for match in re.finditer(
+        r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        page_html,
+        re.DOTALL | re.IGNORECASE,
+    ):
+        try:
+            payload = json.loads(html_lib.unescape(match.group(1)).strip())
+        except (json.JSONDecodeError, TypeError):
+            continue
+        posting = next(_job_postings(payload), {})
+        if posting:
+            break
+
+    if posting:
+        organization = posting.get("hiringOrganization") or {}
+        details.update({
+            "job_title": _clean_detail_text(posting.get("title")),
+            "company": _clean_detail_text(organization.get("name")) if isinstance(organization, dict) else "",
+            "description": _clean_detail_text(posting.get("description"), preserve_lines=True)[:12_000],
+            "posted_at": posting.get("datePosted"),
+            "location": _json_ld_location(posting),
+            "skills": _json_ld_text(posting.get("skills")),
+            "experience": _json_ld_text(posting.get("experienceRequirements")),
+            "education_requirements": _json_ld_text(posting.get("educationRequirements")),
+            "basic_qualifications": _json_ld_text(posting.get("qualifications")),
+            "preferred_qualifications": _json_ld_text(posting.get("preferredQualifications")),
+            "key_responsibilities": _json_ld_text(posting.get("responsibilities")),
+            "company_industry": _json_ld_text(posting.get("industry")),
+        })
+        job_type = _employment_type(posting.get("employmentType"))
+        if job_type:
+            details["job_type"] = job_type
+        remote_type = str(posting.get("jobLocationType") or "").upper()
+        if "TELECOMMUTE" in remote_type or "REMOTE" in remote_type:
+            details.update(work_mode="remote", is_remote=True)
+        details.update(_json_ld_salary(posting))
+
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(page_html, "html.parser")
+        if not details.get("description"):
+            node = soup.find(
+                ["div", "section"],
+                class_=lambda value: value and any(
+                    marker in " ".join(value) if isinstance(value, list) else marker in str(value)
+                    for marker in ("show-more-less-html__markup", "description__text")
+                ),
+            ) or soup.find(attrs={"data-test-id": "job-description"})
+            if node:
+                details["description"] = _clean_detail_text(str(node), preserve_lines=True)[:12_000]
+
+        for item in soup.find_all(class_=lambda value: value and "description__job-criteria-item" in str(value)):
+            heading = item.find("h3")
+            content = item.find("span", class_=lambda value: value and "description__job-criteria-text" in str(value))
+            label = _clean_detail_text(heading.get_text(" ") if heading else "").lower()
+            value = _clean_detail_text(content.get_text(" ") if content else "")
+            if not label or not value:
+                continue
+            if "employment type" in label:
+                details["job_type"] = _employment_type(value)
+            elif "seniority level" in label:
+                details["experience"] = value
+            elif "job function" in label:
+                details["job_function"] = value
+            elif "industr" in label:
+                details["company_industry"] = value
+            elif "workplace" in label or "work mode" in label:
+                mode = value.lower().replace("-", "")
+                if "remote" in mode:
+                    details.update(work_mode="remote", is_remote=True)
+                elif "hybrid" in mode:
+                    details.update(work_mode="hybrid", is_remote=False)
+                elif "onsite" in mode or "on site" in value.lower():
+                    details.update(work_mode="onsite", is_remote=False)
+
+        apply_code = soup.find("code", id="applyUrl")
+        if apply_code:
+            encoded = html_lib.unescape(apply_code.decode_contents()).strip().strip('"')
+            match = re.search(r"[?&]url=([^\"&<]+)", encoded)
+            direct_url = unquote(match.group(1) if match else encoded)
+            if direct_url.startswith(("http://", "https://")):
+                details["apply_url"] = direct_url
+    except ImportError:
+        pass
+
+    description = str(details.get("description") or "")
+    if description:
+        details.update(split_jd_sections(description))
+    return {key: value for key, value in details.items() if value not in (None, "", [], {})}
+
+
+def _fetch_one_job_details(url: str) -> dict[str, Any]:
+    """Fetch and parse one LinkedIn detail page; return an empty dict on failure."""
     try:
         import httpx
+
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -408,98 +653,90 @@ def _fetch_one_description(url: str) -> str:
         }
         for attempt in range(DESC_RETRIES + 1):
             try:
-                resp = httpx.get(url, headers=headers, timeout=DESC_TIMEOUT, follow_redirects=True)
-                if resp.status_code == 200:
-                    text = resp.text
-                    # Extract description from LinkedIn's HTML
-                    # Try the main description section first
-                    patterns = [
-                        r'<div[^>]*class="[^"]*description__text[^"]*"[^>]*>(.*?)</div>',
-                        r'<section[^>]*class="[^"]*description[^"]*"[^>]*>(.*?)</section>',
-                        r'<div[^>]*data-test-id="job-description"[^>]*>(.*?)</div>',
-                    ]
-                    for pattern in patterns:
-                        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
-                        if match:
-                            raw = match.group(1)
-                            # Strip HTML tags
-                            clean = re.sub(r'<[^>]+>', ' ', raw)
-                            clean = re.sub(r'\s+', ' ', clean).strip()
-                            if len(clean) > 100:
-                                return clean[:8000]
-                    # Fallback: look for JSON-LD structured data
-                    jld = re.search(r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', text, re.DOTALL)
-                    if jld:
-                        try:
-                            import json as _json
-                            data = _json.loads(jld.group(1))
-                            desc = data.get("description", "")
-                            if desc:
-                                clean = re.sub(r'<[^>]+>', ' ', desc)
-                                clean = re.sub(r'\s+', ' ', clean).strip()
-                                return clean[:8000]
-                        except Exception:
-                            pass
-                elif resp.status_code == 429:
+                response = httpx.get(url, headers=headers, timeout=DESC_TIMEOUT, follow_redirects=True)
+                if response.status_code == 200 and "/signup" not in str(response.url):
+                    return _parse_linkedin_detail_html(response.text)
+                if response.status_code == 429:
                     time.sleep(5 * (attempt + 1))
                     continue
             except Exception:
                 if attempt < DESC_RETRIES:
                     time.sleep(2)
     except ImportError:
-        pass  # httpx not available
-    return ""
+        pass
+    return {}
 
 
-def async_fetch_descriptions(
+def _merge_job_details(job: dict[str, Any], details: dict[str, Any]) -> None:
+    """Merge authoritative detail-page values without replacing useful data with blanks."""
+    if not details:
+        return
+    for key, value in details.items():
+        if value in (None, "", [], {}):
+            continue
+        if key == "description":
+            if len(str(value)) > len(str(job.get(key) or "")):
+                job[key] = value
+        else:
+            job[key] = value
+
+    structured = dict(job.get("structured_fields") or {})
+    if job.get("job_type"):
+        structured["job_type"] = job["job_type"]
+    if job.get("work_mode"):
+        structured["work_mode"] = job["work_mode"]
+    if job.get("salary_min") is not None or job.get("salary_max") is not None:
+        structured["salary"] = {
+            "min": job.get("salary_min"), "max": job.get("salary_max"),
+            "currency": job.get("salary_currency"), "period": job.get("salary_period"),
+        }
+    job["structured_fields"] = structured
+
+
+def async_fetch_job_details(
     jobs: list[dict],
     workers: int = DESC_WORKERS,
 ) -> list[dict]:
-    """
-    Given a list of job dicts (each with 'job_url'), fetch full descriptions
-    in parallel using a thread pool. Updates description field in-place.
-    Only fetches for jobs with empty/short descriptions.
-    """
-    to_fetch = [
-        (i, j) for i, j in enumerate(jobs)
-        if not j.get("description") or len(str(j.get("description", ""))) < 200
-    ]
+    """Fetch full LinkedIn details for every job and merge them in place."""
+    to_fetch = [(index, job) for index, job in enumerate(jobs) if job.get("job_url")]
     if not to_fetch:
         return jobs
-
-    log.info(f"    Fetching descriptions for {len(to_fetch)} jobs via {workers} threads...")
+    log.info("    Fetching structured details for %d jobs via %d threads...", len(to_fetch), workers)
     fetched = 0
-
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        future_to_idx = {
-            pool.submit(_fetch_one_description, j["job_url"]): i
-            for i, j in to_fetch
+        futures = {
+            pool.submit(_fetch_one_job_details, job["job_url"]): index
+            for index, job in to_fetch
         }
-        for future in as_completed(future_to_idx):
-            idx = future_to_idx[future]
+        for future in as_completed(futures):
+            index = futures[future]
             try:
-                desc = future.result()
-                if desc:
-                    jobs[idx]["description"] = desc
+                details = future.result()
+                jobs[index]["_linkedin_detail_fetched"] = bool(details)
+                if details:
+                    _merge_job_details(jobs[index], details)
                     fetched += 1
-            except Exception as e:
-                log.debug(f"    Desc fetch failed for job idx {idx}: {e}")
-
-    log.info(f"    Descriptions fetched: {fetched}/{len(to_fetch)}")
+            except Exception as exc:
+                log.debug("    Detail fetch failed for job idx %d: %s", index, exc)
+    log.info("    Structured details fetched: %d/%d", fetched, len(to_fetch))
     return jobs
 
 
-def fetch_descriptions_with_retry(jobs: list[dict], workers: int = DESC_WORKERS) -> list[dict]:
-    """Fetch detail text, then retry only unresolved jobs at lower concurrency."""
-    async_fetch_descriptions(jobs, workers=workers)
-    missing = [j for j in jobs if len(str(j.get("description") or "")) < 200]
+def fetch_job_details_with_retry(jobs: list[dict], workers: int = DESC_WORKERS) -> list[dict]:
+    """Fetch details, then retry blocked/incomplete pages at lower concurrency."""
+    async_fetch_job_details(jobs, workers=workers)
+    missing = [
+        job for job in jobs
+        if not job.get("_linkedin_detail_fetched")
+        or len(str(job.get("description") or "")) < 200
+    ]
     if missing:
         log.info(
-            "    Retrying %d missing descriptions with %d workers after %ds...",
+            "    Retrying %d incomplete detail pages with %d workers after %ds...",
             len(missing), DESC_RETRY_WORKERS, DESC_RETRY_DELAY,
         )
         time.sleep(DESC_RETRY_DELAY)
-        async_fetch_descriptions(missing, workers=DESC_RETRY_WORKERS)
+        async_fetch_job_details(missing, workers=DESC_RETRY_WORKERS)
     return jobs
 
 
@@ -509,12 +746,20 @@ def enrich_jobs_after_details(jobs: list[dict]) -> list[dict]:
     for job in jobs:
         try:
             candidate = dict(job)
+            candidate.pop("_linkedin_detail_fetched", None)
             # CSV reloads serialize the evidence object as text. Discard that
             # stale representation and rebuild it from the final description.
             if not isinstance(candidate.get("extraction"), dict):
                 candidate.pop("extraction", None)
-            result = sanitize(enrich_raw_job(candidate))
+            result = enrich_raw_job(candidate)
+            result = sanitize(enrich_matching_fields(result))
             result.pop("structured_fields", None)
+            # Keep a stable set of columns across every CSV row.
+            for key in _DETAIL_FIELDS:
+                result.setdefault(key, None)
+            result.setdefault("skills_required", [])
+            result.setdefault("skills_preferred", [])
+            result.setdefault("education_requirements", [])
             enriched.append(result)
         except Exception as exc:
             log.debug("    Structured extraction failed for %s: %s", job.get("id"), exc)
@@ -698,6 +943,7 @@ def scrape_role(
             raw_job: dict[str, Any] = {
                 "id":              job_id,
                 "search_role":     role,
+                "role_category":   role,
                 "job_title":       title,
                 "company":         company,
                 "location":        loc,
@@ -712,8 +958,18 @@ def scrape_role(
                 "structured_fields": structured_fields,
                 "source_board":    "LinkedIn",
                 "scraper_type":    "jobspy",
-                "created_at":      date_str,
+                "posted_at":       date_str,
                 "scraped_at":      datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "experience":      str(row.get("job_level") or ""),
+                "work_mode":       "remote" if is_remote else "",
+                "salary":          "",
+                "salary_period":   str(row.get("interval") or ""),
+                "country":         None,
+                "job_function":    str(row.get("job_function") or ""),
+                "company_industry": str(row.get("company_industry") or ""),
+                "basic_qualifications": None,
+                "preferred_qualifications": None,
+                "key_responsibilities": None,
             }
 
             # Detail fetching happens below. Extracting here would permanently
@@ -727,10 +983,11 @@ def scrape_role(
             f"(role running total: {len(all_jobs)})"
         )
 
-        # Parallel description fetch for this page's new jobs
+        # Fetch each job page once for all published structured details, then
+        # derive matching fields only after the best description is available.
         if fetch_description and new_in_batch > 0:
             page_new = all_jobs[-new_in_batch:]
-            page_new = fetch_descriptions_with_retry(page_new, workers=desc_workers)
+            page_new = fetch_job_details_with_retry(page_new, workers=desc_workers)
             all_jobs[-new_in_batch:] = enrich_jobs_after_details(page_new)
         elif new_in_batch > 0:
             page_new = all_jobs[-new_in_batch:]

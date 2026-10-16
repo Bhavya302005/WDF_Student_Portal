@@ -216,6 +216,19 @@ def _normalize_skills(value: Any) -> list[str]:
     return []
 
 
+def _normalize_json_object(value: Any) -> dict[str, Any] | None:
+    """Decode JSON objects serialized through CSV; reject non-object payloads."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else None
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return None
+
+
 def _normalize_work_mode(value: Any) -> str | None:
     if not value:
         return None
@@ -251,6 +264,8 @@ def map_job(raw: dict) -> dict:
         if canonical not in job:
             job[canonical] = val
 
+    extraction = _normalize_json_object(job.get("extraction"))
+
     return {
         "id":                      _stable_id(raw),
         "job_title":               job.get("job_title") or job.get("title") or "",
@@ -278,7 +293,7 @@ def map_job(raw: dict) -> dict:
         "basic_qualifications":    job.get("basic_qualifications"),
         "preferred_qualifications": job.get("preferred_qualifications"),
         "key_responsibilities":    job.get("key_responsibilities"),
-        "extraction":              Jsonb(job.get("extraction")) if job.get("extraction") is not None else None,
+        "extraction":              Jsonb(extraction) if extraction is not None else None,
         "job_url":                 job.get("job_url") or job.get("url") or job.get("link"),
         "apply_url":               job.get("apply_url") or job.get("apply_link"),
     }

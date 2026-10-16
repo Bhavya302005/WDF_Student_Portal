@@ -20,7 +20,9 @@ FIELD_GROUPS: dict[str, tuple[str, ...]] = {
     "title": ("job_title", "title", "jobTitle"),
     "company": ("company", "company_name", "employer"),
     "location": ("location", "location_str", "jobLocation"),
+    "country": ("country",),
     "url": ("job_url", "url", "job_link", "link"),
+    "apply URL": ("apply_url", "job_url_direct", "application_url", "apply_link"),
     "description": ("description", "job_description", "content"),
     "posted": ("posted_at", "date_posted", "created_at", "scraped_at"),
     "salary": ("salary", "salary_min", "salary_max", "compensation"),
@@ -28,6 +30,9 @@ FIELD_GROUPS: dict[str, tuple[str, ...]] = {
     "work mode": ("work_mode", "is_remote"),
     "experience": ("experience", "experience_min", "experience_max"),
     "job type": ("job_type", "employment_type"),
+    "education": ("education_requirements", "education"),
+    "qualifications": ("basic_qualifications", "preferred_qualifications"),
+    "responsibilities": ("key_responsibilities", "responsibilities"),
 }
 
 def populated(value: Any) -> bool:
