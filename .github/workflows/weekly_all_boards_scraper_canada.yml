@@ -310,6 +310,7 @@ jobs:
           strict_all = pd.concat([strict_li, strict_ind], ignore_index=True)
           if 'id' in strict_all.columns:
               strict_all = strict_all.drop_duplicates(subset=['id'], keep='first')
+          strict_all = strict_all.drop(columns=['Index_No'], errors='ignore')
           strict_all.insert(0, 'Index_No', range(1, len(strict_all)+1))
           clean(strict_all).to_csv('deliverables/strict_jobs.csv', index=False)
           print(f'strict_jobs.csv   → {len(strict_all)} rows')
@@ -318,6 +319,7 @@ jobs:
           other_all = pd.concat([other_li, other_ind], ignore_index=True)
           if 'id' in other_all.columns:
               other_all = other_all.drop_duplicates(subset=['id'], keep='first')
+          other_all = other_all.drop(columns=['Index_No'], errors='ignore')
           other_all.insert(0, 'Index_No', range(1, len(other_all)+1))
           clean(other_all).to_csv('deliverables/other_jobs.csv', index=False)
           print(f'other_jobs.csv    → {len(other_all)} rows')
