@@ -136,6 +136,7 @@ jobs:
     needs: [scrape-ats, scrape-li-indeed]
     if: >-
       ${{
+        always() &&
         (github.event_name != 'workflow_dispatch' || inputs.run_merge) &&
         (needs.scrape-ats.result == 'success' || needs.scrape-ats.result == 'skipped') &&
         (needs.scrape-li-indeed.result == 'success' || needs.scrape-li-indeed.result == 'skipped')
