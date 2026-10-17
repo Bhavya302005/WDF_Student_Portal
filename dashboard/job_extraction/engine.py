@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import re
 
-VERSION = 'jd-v2'
+VERSION = 'jd-v3'
 
 _BOUNDARY = re.compile(r'[;\n]|[.!?](?=\s|$)')
 
@@ -297,6 +297,56 @@ def experience_candidates(text):
     return out
 
 
+_SECTION_HEADERS = [
+    ('preferred_qualifications', re.compile(
+        r'(?im)^\s*(?:preferred|desired|nice[- ]to[- ]have|bonus|additional)\s+'
+        r'(?:qualifications?|requirements?|skills?|experience)(?:\s+and\s+skills?)?\s*:?[ \t]*$')),
+    ('key_responsibilities', re.compile(
+        r'(?im)^\s*(?:key\s+)?(?:responsibilities|duties|what\s+you(?:\'|’)?ll\s+do|'
+        r'what\s+you\s+will\s+do|your\s+role|the\s+role|role\s+responsibilities)\s*:?[ \t]*$')),
+    ('basic_qualifications', re.compile(
+        r'(?im)^\s*(?:(?:required|minimum|basic|essential|mandatory|must[- ]have)\s+)?'
+        r'(?:qualifications?|requirements?|skills?)(?:\s+and\s+experience)?\s*:?[ \t]*$|'
+        r'^\s*(?:what\s+you\s+bring|what\s+we(?:\'|’)?re\s+looking\s+for|who\s+you\s+are)\s*:?[ \t]*$')),
+]
+
+_INLINE_SECTION_HEADER = re.compile(
+    r"\b(?P<header>"
+    r"Basic Qualifications|BASIC QUALIFICATIONS|Required Qualifications|REQUIRED QUALIFICATIONS|"
+    r"Minimum Qualifications|MINIMUM QUALIFICATIONS|Preferred Qualifications|PREFERRED QUALIFICATIONS|"
+    r"Qualifications Required|QUALIFICATIONS REQUIRED|Skills/Qualifications|SKILLS/QUALIFICATIONS|"
+    r"Key Responsibilities|KEY RESPONSIBILITIES|Responsibilities|RESPONSIBILITIES|"
+    r"Essential Duties(?: And Responsibilities)?|ESSENTIAL DUTIES(?: AND RESPONSIBILITIES)?|"
+    r"What You(?:'|’)?ll Do|WHAT YOU(?:'|’)?LL DO"
+    r")\s*:?"
+)
+
+
+def section_fields(text):
+    """Extract explicitly headed qualification/responsibility blocks."""
+    headings = []
+    for field, pattern in _SECTION_HEADERS:
+        headings.extend((match.start(), match.end(), field) for match in pattern.finditer(text))
+    for match in _INLINE_SECTION_HEADER.finditer(text):
+        header = match.group('header').lower()
+        if 'preferred' in header:
+            field = 'preferred_qualifications'
+        elif 'responsibilit' in header or 'duties' in header or "you'll do" in header or 'you’ll do' in header:
+            field = 'key_responsibilities'
+        else:
+            field = 'basic_qualifications'
+        headings.append((match.start(), match.end(), field))
+    headings = list(dict.fromkeys(headings))
+    headings.sort()
+    fields = {}
+    for index, (_, content_start, field) in enumerate(headings):
+        content_end = headings[index + 1][0] if index + 1 < len(headings) else len(text)
+        value = text[content_start:content_end].strip(' \t\r\n:-')[:6000]
+        if value and field not in fields:
+            fields[field] = value
+    return fields
+
+
 SOURCE_KEYS = ('source_board', 'salary', 'salary_min', 'salary_max', 'salary_currency', 'salary_period', 'skills',
                'work_mode', 'job_type', 'experience', 'compensation', 'baseSalary', 'salaryRange', 'structured_fields')
 
@@ -444,6 +494,7 @@ def project(raw, result, text, original, source, key):
     experiences = [e for e in result['experience'] if e.get('requirement') == 'required'] or result['experience']
     exp = max(experiences, key=lambda item: item.get('min') or 0) if experiences else None
     out = dict(raw)
+    sections = section_fields(text)
     out.update(description=text, description_raw=original, extraction=result,
                salary=selected['text'] if selected else (raw.get('salary') or ''),
                salary_min=selected['min'] if (selected and selected.get('min') is not None) else raw.get('salary_min'),
@@ -456,7 +507,10 @@ def project(raw, result, text, original, source, key):
                is_remote=(result['work_mode']['value'] == 'Remote') if result['work_mode']['value'] else None,
                experience=exp['evidence']['text'] if exp else '',
                experience_min=exp['min'] if exp else None, experience_max=exp['max'] if exp else None,
-               education_requirements=list(dict.fromkeys(item['value'] for item in result['education'])))
+               education_requirements=list(dict.fromkeys(item['value'] for item in result['education'])),
+               basic_qualifications=raw.get('basic_qualifications') or sections.get('basic_qualifications'),
+               preferred_qualifications=raw.get('preferred_qualifications') or sections.get('preferred_qualifications'),
+               key_responsibilities=raw.get('key_responsibilities') or sections.get('key_responsibilities'))
     return out
 
 
