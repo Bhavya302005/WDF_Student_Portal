@@ -192,10 +192,13 @@ jobs:
 
           def write_csv(items, path):
               if not items: return
-              fieldnames = list(items[0].keys())
-              if 'Index_No' not in fieldnames: fieldnames = ['Index_No'] + fieldnames
+              fieldnames = ['Index_No']
+              for item in items:
+                  for key in item.keys():
+                      if key != 'Index_No' and key not in fieldnames:
+                          fieldnames.append(key)
               with open(path, 'w', encoding='utf-8', newline='') as fp:
-                  writer = csv.DictWriter(fp, fieldnames=fieldnames, quoting=csv.QUOTE_NONNUMERIC)
+                  writer = csv.DictWriter(fp, fieldnames=fieldnames, quoting=csv.QUOTE_NONNUMERIC, extrasaction='ignore')
                   writer.writeheader()
                   for idx, item in enumerate(items, start=1):
                       row = dict(item)
