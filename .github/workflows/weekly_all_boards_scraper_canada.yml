@@ -269,8 +269,8 @@ jobs:
 
           def clean(df):
               for col in df.columns:
-                  df[col] = df[col].astype(str).str.replace(r'\r\n|\r|\n', ' ', regex=True)
-                  df[col] = df[col].apply(lambda x: ILLEGAL.sub('', x))
+                  df[col] = df[col].fillna('').astype(str).str.replace(r'\r\n|\r|\n', ' ', regex=True)
+                  df[col] = df[col].apply(lambda x: ILLEGAL.sub('', str(x)))
               return df
 
           li_all    = load_csv('linkedin/linkedin_jobs/linkedin_68roles_jobs_us.csv')
