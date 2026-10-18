@@ -1,0 +1,117 @@
+name: Semantic Job Index (test)
+
+# Test-only build of the semantic index, run automatically when vector code
+# changes on the test branch, so results can be checked before merging.
+# Reads public.jobs (NEON_DATABASE_URL, read-only) and writes vectors to the
+# separate vector database (MATCHING_DATABASE_URL); never modifies jobs.
+# Same steps as a full build: drop the ANN index, embed on parallel runners
+# (disjoint shards by a hash of the job text), then rebuild the index once.
+
+on:
+  push:
+    branches: [claude/vector-index-test]
+    paths:
+      - 'matching/**'
+      - '.github/workflows/vector_index_test.yml'
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: 'Parallel runners (1-20)'
+        required: true
+        default: '20'
+        type: string
+
+# Never run two index builds against the same database at once.
+concurrency:
+  group: semantic-job-index
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Absolute: "~" is not expanded in env values.
+  FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+      count: ${{ steps.plan.outputs.count }}
+      started: ${{ steps.plan.outputs.started }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Plan shards
+        id: plan
+        run: |
+          count="${{ inputs.shards || '20' }}"
+          case "$count" in ''|*[!0-9]*) echo "shards must be a number" >&2; exit 1;; esac
+          if [ "$count" -lt 1 ] || [ "$count" -gt 20 ]; then echo "shards must be 1-20" >&2; exit 1; fi
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "shards=$(python3 -c "import json; print(json.dumps(list(range($count))))")" >> "$GITHUB_OUTPUT"
+          # The sync point is when the run starts: jobs changed meanwhile are caught next time.
+          echo "started=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" >> "$GITHUB_OUTPUT"
+      - name: Drop the ANN index before the bulk load
+        run: |
+          pip install --quiet -r matching/requirements-index.txt
+          python -m matching.vector_sync --prepare-bulk
+        env:
+          MATCHING_DATABASE_URL: ${{ secrets.MATCHING_DATABASE_URL }}
+
+  embed:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJson(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Cache embedding model
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/fastembed
+          key: fastembed-bge-small-en-v1.5
+      - name: Install dependencies
+        run: pip install --quiet -r matching/requirements-index.txt
+      - name: Embed shard ${{ matrix.shard }} of ${{ needs.plan.outputs.count }}
+        run: |
+          echo "runner CPUs: $(nproc)"
+          python -m matching.vector_sync --full --bulk --shard ${{ matrix.shard }}/${{ needs.plan.outputs.count }}
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          MATCHING_DATABASE_URL: ${{ secrets.MATCHING_DATABASE_URL }}
+
+  finalize:
+    needs: [plan, embed]
+    # Always rebuild the index after shards ran, even if one failed, so search
+    # stays fast; only advance the sync point when every shard succeeded.
+    if: ${{ always() && needs.plan.result == 'success' && needs.embed.result != 'cancelled' && needs.embed.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install --quiet -r matching/requirements-index.txt
+      - name: Build index and record sync point
+        run: |
+          args="--finalize"
+          if [ "${{ needs.embed.result }}" = success ]; then
+            args="$args --synced-at ${{ needs.plan.outputs.started }} --reconcile"
+          else
+            echo "::warning::Some shards failed; the sync point is not advanced, so the next run retries them."
+          fi
+          python -m matching.vector_sync $args
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          MATCHING_DATABASE_URL: ${{ secrets.MATCHING_DATABASE_URL }}

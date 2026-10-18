@@ -1,0 +1,162 @@
+[
+  {
+    "id": "target_roles",
+    "label": "Which roles are you targeting?",
+    "help_text": "Edit or add role titles. These guide role filtering and ranking.",
+    "kind": "multi_select",
+    "required": true,
+    "options": []
+  },
+  {
+    "id": "confirmed_skills",
+    "label": "Confirm your relevant skills",
+    "help_text": "Remove incorrectly detected skills and add missing ones.",
+    "kind": "multi_select",
+    "required": true,
+    "options": []
+  },
+  {
+    "id": "professional_years",
+    "label": "How many years of professional experience do you have?",
+    "help_text": "Projects and education are not counted as professional employment.",
+    "kind": "number",
+    "required": true,
+    "options": []
+  },
+  {
+    "id": "preferred_locations",
+    "label": "Preferred job locations",
+    "help_text": "Leave as no preference if location should not filter jobs.",
+    "kind": "multi_select",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "work_modes",
+    "label": "Preferred work modes",
+    "help_text": "Choose any acceptable modes.",
+    "kind": "multi_select",
+    "required": true,
+    "options": ["remote", "hybrid", "onsite", "no preference"]
+  },
+  {
+    "id": "employment_types",
+    "label": "Preferred employment types",
+    "help_text": "Choose any acceptable employment arrangements.",
+    "kind": "multi_select",
+    "required": true,
+    "options": ["full time", "part time", "contract", "internship", "temporary"]
+  },
+  {
+    "id": "hard_location_constraint",
+    "label": "Should location be a strict requirement?",
+    "help_text": "If disabled, location is treated as a preference rather than a rejection rule.",
+    "kind": "boolean",
+    "required": true,
+    "options": []
+  },
+  {
+    "id": "career_level",
+    "label": "Target career level",
+    "help_text": "Edit the inferred level if it does not match your target.",
+    "kind": "single_select",
+    "required": false,
+    "options": ["intern", "entry-level", "junior", "mid", "senior", "lead", "principal"]
+  },
+  {
+    "id": "strict_role_constraint",
+    "label": "Only recommend the selected roles?",
+    "help_text": "Disable this for adjacent roles; selected roles still rank higher.",
+    "kind": "boolean",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "strict_work_mode_constraint",
+    "label": "Should work mode be strict?",
+    "help_text": "When enabled, remote-only never includes hybrid or on-site jobs.",
+    "kind": "boolean",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "strict_employment_constraint",
+    "label": "Should employment type be strict?",
+    "help_text": "When enabled, only selected employment types are eligible.",
+    "kind": "boolean",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "strict_experience_constraint",
+    "label": "Exclude jobs above your experience?",
+    "help_text": "When enabled, jobs requiring more professional experience are excluded.",
+    "kind": "boolean",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "minimum_salary",
+    "label": "Minimum acceptable annual salary",
+    "help_text": "Leave empty when salary should not affect matching.",
+    "kind": "number",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "salary_currency",
+    "label": "Salary currency",
+    "help_text": "For example USD, INR, GBP, or EUR.",
+    "kind": "text",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "salary_flexible",
+    "label": "Is the minimum salary flexible?",
+    "help_text": "If disabled, known salaries below the minimum are excluded.",
+    "kind": "boolean",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "work_authorization",
+    "label": "What is your work authorization status?",
+    "help_text": "Select the option that best describes your current status.",
+    "kind": "single_select",
+    "required": true,
+    "options": ["citizen or permanent resident", "authorized without sponsorship", "temporary or student authorization", "not currently authorized", "prefer not to say"]
+  },
+  {
+    "id": "requires_sponsorship",
+    "label": "Will you need employer sponsorship now or in the future?",
+    "help_text": "Saved to your profile; eligibility filtering is applied only after a job provides reliable structured sponsorship data.",
+    "kind": "boolean",
+    "required": true,
+    "options": []
+  },
+  {
+    "id": "willing_to_relocate",
+    "label": "Are you willing to relocate?",
+    "help_text": "This can broaden location matches without changing your preferred locations.",
+    "kind": "boolean",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "max_job_age_days",
+    "label": "Maximum job posting age in days",
+    "help_text": "Defaults to 30 days; jobs without a reliable date remain eligible but unscored for freshness.",
+    "kind": "number",
+    "required": false,
+    "options": []
+  },
+  {
+    "id": "blocked_companies",
+    "label": "Companies to exclude",
+    "help_text": "Jobs from these companies will never be recommended.",
+    "kind": "multi_select",
+    "required": false,
+    "options": []
+  }
+]

@@ -1,0 +1,1450 @@
+{
+  "skill_aliases": {
+    "react": [
+      "react",
+      "react.js",
+      "reactjs"
+    ],
+    "postgresql": [
+      "postgres",
+      "postgresql",
+      "postgre sql"
+    ],
+    "node.js": [
+      "node",
+      "node.js",
+      "nodejs"
+    ],
+    "javascript": [
+      "javascript",
+      "js",
+      "ecmascript"
+    ],
+    "typescript": [
+      "typescript",
+      "ts"
+    ],
+    "python": [
+      "python",
+      "python3"
+    ],
+    "fastapi": [
+      "fastapi"
+    ],
+    "aws": [
+      "aws",
+      "amazon web services"
+    ],
+    "kubernetes": [
+      "kubernetes",
+      "k8s"
+    ],
+    "machine learning": [
+      "machine learning",
+      "ml"
+    ],
+    "artificial intelligence": [
+      "artificial intelligence",
+      "ai"
+    ],
+    "continuous integration": [
+      "continuous integration",
+      "ci/cd",
+      "cicd"
+    ],
+    "strategic sourcing": [
+      "strategic sourcing",
+      "global sourcing",
+      "sourcing strategy",
+      "sourcing"
+    ],
+    "procurement": [
+      "procurement",
+      "e-procurement",
+      "purchasing",
+      "source-to-pay",
+      "source to pay",
+      "s2p",
+      "direct procurement",
+      "indirect procurement"
+    ],
+    "supplier relationship management": [
+      "supplier relationship management",
+      "srm",
+      "supplier management",
+      "vendor management",
+      "supplier engagement",
+      "supplier performance management",
+      "spm",
+      "qbr",
+      "qbrs",
+      "supplier scorecard"
+    ],
+    "supplier selection": [
+      "supplier selection",
+      "supplier evaluation",
+      "supplier identification",
+      "supplier development",
+      "supplier audits",
+      "new supplier development",
+      "bid negotiation"
+    ],
+    "rfx": [
+      "rfx",
+      "rfq",
+      "rfp",
+      "rfi",
+      "rfqs",
+      "rfps",
+      "rfis",
+      "request for proposal",
+      "request for quotation"
+    ],
+    "contract negotiation": [
+      "contract negotiation",
+      "contract negotiations",
+      "nda",
+      "msa",
+      "sow",
+      "master purchase agreement",
+      "contract terms",
+      "commercial negotiation"
+    ],
+    "cost modeling": [
+      "cost modeling",
+      "should cost modeling",
+      "should-cost",
+      "should cost",
+      "clean-sheet",
+      "clean sheet",
+      "cost reduction",
+      "cost analysis",
+      "spend analysis",
+      "tco",
+      "total cost of ownership",
+      "ppv",
+      "purchase price variance",
+      "costed bom",
+      "cost estimator"
+    ],
+    "supply chain management": [
+      "supply chain management",
+      "global supply chain",
+      "supply chain",
+      "logistics",
+      "capacity planning"
+    ],
+    "inventory management": [
+      "inventory management",
+      "inventory control",
+      "inventory readiness",
+      "cycle counts",
+      "kitting",
+      "stocking",
+      "inventory policies"
+    ],
+    "demand planning": [
+      "demand planning",
+      "mrp",
+      "material requirements planning",
+      "forecasting",
+      "clear-to-build"
+    ],
+    "bill of materials": [
+      "bill of materials",
+      "bom",
+      "boms",
+      "costed bom",
+      "engineering change order",
+      "eco",
+      "ecr"
+    ],
+    "dfm": [
+      "dfm",
+      "design for manufacturability",
+      "dfa",
+      "design for assembly",
+      "va/ve",
+      "value analysis",
+      "value engineering",
+      "design to cost",
+      "dtc"
+    ],
+    "npi": [
+      "npi",
+      "new product introduction",
+      "evt",
+      "dvt",
+      "pvt"
+    ],
+    "six sigma": [
+      "six sigma",
+      "lean six sigma",
+      "lean methodologies",
+      "kaizen",
+      "kanban",
+      "5s",
+      "vsm",
+      "value stream mapping",
+      "fmea",
+      "continuous improvement"
+    ],
+    "sap mm": [
+      "sap mm",
+      "sap ariba",
+      "sap",
+      "ariba"
+    ],
+    "coupa": [
+      "coupa"
+    ],
+    "oracle ebs": [
+      "oracle ebs",
+      "oracle",
+      "oracle erp"
+    ],
+    "netsuite": [
+      "netsuite",
+      "oracle netsuite"
+    ],
+    "erp": [
+      "erp"
+    ],
+    "power bi": [
+      "power bi",
+      "powerbi",
+      "microsoft power bi"
+    ],
+    "excel": [
+      "excel",
+      "advanced excel",
+      "vlookup",
+      "pivot tables",
+      "macros",
+      "vba",
+      "microsoft excel",
+      "ms excel"
+    ],
+    "jira": [
+      "jira"
+    ],
+    "sql": [
+      "sql"
+    ],
+    "project management": [
+      "project management",
+      "program management",
+      "pmp"
+    ],
+    "mechanical engineering": [
+      "mechanical engineering",
+      "mechanical",
+      "electromechanical",
+      "machining",
+      "cnc",
+      "injection molding",
+      "sheet metal"
+    ],
+    "electronics": [
+      "electronics",
+      "semiconductors",
+      "pcb",
+      "pcba",
+      "passive components"
+    ],
+    "ai procurement": [
+      "spendata",
+      "marketdojo",
+      "tealbook",
+      "ai procurement",
+      "ai sourcing",
+      "procurement intelligence"
+    ],
+    "java": [
+      "java"
+    ],
+    "c++": [
+      "c++"
+    ],
+    "c#": [
+      "c#"
+    ],
+    "go": [
+      "golang",
+      "go programming"
+    ],
+    "rust": [
+      "rust"
+    ],
+    "angular": [
+      "angular"
+    ],
+    "vue": [
+      "vue"
+    ],
+    "next.js": [
+      "next.js"
+    ],
+    "django": [
+      "django"
+    ],
+    "flask": [
+      "flask"
+    ],
+    "mysql": [
+      "mysql"
+    ],
+    "mongodb": [
+      "mongodb"
+    ],
+    "nosql": [
+      "nosql"
+    ],
+    "redis": [
+      "redis"
+    ],
+    "gcp": [
+      "gcp",
+      "google cloud platform"
+    ],
+    "azure": [
+      "azure",
+      "microsoft azure"
+    ],
+    "docker": [
+      "docker"
+    ],
+    "terraform": [
+      "terraform"
+    ],
+    "deep learning": [
+      "deep learning"
+    ],
+    "pytorch": [
+      "pytorch"
+    ],
+    "tensorflow": [
+      "tensorflow"
+    ],
+    "pandas": [
+      "pandas"
+    ],
+    "spark": [
+      "spark"
+    ],
+    "kafka": [
+      "kafka"
+    ],
+    "natural language processing": [
+      "natural language processing",
+      "nlp"
+    ],
+    "large language models": [
+      "large language models",
+      "llm",
+      "llms"
+    ],
+    "tableau": [
+      "tableau"
+    ],
+    "looker": [
+      "looker"
+    ],
+    "snowflake": [
+      "snowflake"
+    ],
+    "databricks": [
+      "databricks"
+    ],
+    "dbt": [
+      "dbt"
+    ],
+    "airflow": [
+      "airflow"
+    ],
+    "sap ariba": [
+      "sap ariba",
+      "ariba"
+    ],
+    "sap": [
+      "sap",
+      "sap erp"
+    ],
+    "sap s 4hana": [
+      "sap s 4hana",
+      "s 4hana"
+    ],
+    "oracle erp": [
+      "oracle erp"
+    ],
+    "workday": [
+      "workday"
+    ],
+    "salesforce": [
+      "salesforce"
+    ],
+    "hubspot": [
+      "hubspot"
+    ],
+    "supplier negotiation": [
+      "supplier negotiation"
+    ],
+    "vendor management": [
+      "vendor management"
+    ],
+    "supplier management": [
+      "supplier management"
+    ],
+    "category management": [
+      "category management"
+    ],
+    "logistics": [
+      "logistics"
+    ],
+    "purchasing": [
+      "purchasing"
+    ],
+    "cost analysis": [
+      "cost analysis"
+    ],
+    "spend analysis": [
+      "spend analysis"
+    ],
+    "forecasting": [
+      "forecasting"
+    ],
+    "financial modeling": [
+      "financial modeling"
+    ],
+    "budgeting": [
+      "budgeting"
+    ],
+    "financial analysis": [
+      "financial analysis"
+    ],
+    "accounting": [
+      "accounting"
+    ],
+    "gaap": [
+      "gaap"
+    ],
+    "ifrs": [
+      "ifrs"
+    ],
+    "quickbooks": [
+      "quickbooks"
+    ],
+    "auditing": [
+      "auditing"
+    ],
+    "risk management": [
+      "risk management"
+    ],
+    "compliance": [
+      "compliance"
+    ],
+    "program management": [
+      "program management"
+    ],
+    "product management": [
+      "product management"
+    ],
+    "stakeholder management": [
+      "stakeholder management"
+    ],
+    "change management": [
+      "change management"
+    ],
+    "business analysis": [
+      "business analysis"
+    ],
+    "agile": [
+      "agile"
+    ],
+    "scrum": [
+      "scrum"
+    ],
+    "kanban": [
+      "kanban"
+    ],
+    "confluence": [
+      "confluence"
+    ],
+    "lean six sigma": [
+      "lean six sigma",
+      "six sigma"
+    ],
+    "lean manufacturing": [
+      "lean manufacturing"
+    ],
+    "process improvement": [
+      "process improvement"
+    ],
+    "quality assurance": [
+      "quality assurance",
+      "qa"
+    ],
+    "quality control": [
+      "quality control",
+      "qc"
+    ],
+    "iso 9001": [
+      "iso 9001"
+    ],
+    "autocad": [
+      "autocad"
+    ],
+    "solidworks": [
+      "solidworks"
+    ],
+    "catia": [
+      "catia"
+    ],
+    "matlab": [
+      "matlab"
+    ],
+    "simulink": [
+      "simulink"
+    ],
+    "figma": [
+      "figma"
+    ],
+    "adobe photoshop": [
+      "adobe photoshop",
+      "photoshop"
+    ],
+    "adobe illustrator": [
+      "adobe illustrator",
+      "illustrator"
+    ],
+    "ux research": [
+      "ux research"
+    ],
+    "ui design": [
+      "ui design"
+    ],
+    "interaction design": [
+      "interaction design"
+    ],
+    "prototyping": [
+      "prototyping"
+    ],
+    "seo": [
+      "seo",
+      "search engine optimization"
+    ],
+    "sem": [
+      "sem",
+      "search engine marketing"
+    ],
+    "google analytics": [
+      "google analytics",
+      "ga4"
+    ],
+    "google ads": [
+      "google ads"
+    ],
+    "content marketing": [
+      "content marketing"
+    ],
+    "copywriting": [
+      "copywriting"
+    ],
+    "email marketing": [
+      "email marketing"
+    ],
+    "social media marketing": [
+      "social media marketing"
+    ],
+    "business development": [
+      "business development"
+    ],
+    "account management": [
+      "account management"
+    ],
+    "lead generation": [
+      "lead generation"
+    ],
+    "customer success": [
+      "customer success"
+    ],
+    "customer service": [
+      "customer service"
+    ],
+    "communication": [
+      "communication"
+    ],
+    "leadership": [
+      "leadership"
+    ],
+    "collaboration": [
+      "collaboration"
+    ],
+    "problem solving": [
+      "problem solving",
+      "problem-solving"
+    ],
+    "critical thinking": [
+      "critical thinking"
+    ],
+    "negotiation": [
+      "negotiation"
+    ],
+    "presentation skills": [
+      "presentation skills"
+    ],
+    "recruiting": [
+      "recruiting",
+      "recruitment"
+    ],
+    "talent acquisition": [
+      "talent acquisition"
+    ],
+    "payroll": [
+      "payroll"
+    ],
+    "employee relations": [
+      "employee relations"
+    ],
+    "training and development": [
+      "training and development"
+    ],
+    "hris": [
+      "hris"
+    ],
+    "clinical research": [
+      "clinical research"
+    ],
+    "patient care": [
+      "patient care"
+    ],
+    "nursing": [
+      "nursing"
+    ],
+    "hipaa": [
+      "hipaa"
+    ],
+    "good manufacturing practice": [
+      "good manufacturing practice",
+      "gmp",
+      "cgmp"
+    ],
+    "good clinical practice": [
+      "good clinical practice",
+      "gcp compliance"
+    ],
+    "cpr": [
+      "cpr"
+    ],
+    "bls": [
+      "bls"
+    ],
+    "acls": [
+      "acls"
+    ],
+    "pmp": [
+      "pmp"
+    ],
+    "cpa": [
+      "cpa"
+    ],
+    "cfa": [
+      "cfa"
+    ],
+    "cissp": [
+      "cissp"
+    ],
+    "osha": [
+      "osha"
+    ],
+    "forklift operation": [
+      "forklift operation"
+    ],
+    "welding": [
+      "welding"
+    ],
+    "cnc": [
+      "cnc"
+    ],
+    "linux": [
+      "linux"
+    ],
+    "unix": [
+      "unix"
+    ],
+    "bash": [
+      "bash"
+    ],
+    "powershell": [
+      "powershell"
+    ],
+    "git": [
+      "git"
+    ],
+    "ci cd": [
+      "ci cd"
+    ],
+    "jenkins": [
+      "jenkins"
+    ],
+    "github actions": [
+      "github actions"
+    ],
+    "ansible": [
+      "ansible"
+    ],
+    "spring boot": [
+      "spring boot"
+    ],
+    "ruby": [
+      "ruby"
+    ],
+    "ruby on rails": [
+      "ruby on rails",
+      "rails"
+    ],
+    "php": [
+      "php"
+    ],
+    "laravel": [
+      "laravel"
+    ],
+    "swift": [
+      "swift"
+    ],
+    "kotlin": [
+      "kotlin"
+    ],
+    "dart": [
+      "dart"
+    ],
+    "flutter": [
+      "flutter"
+    ],
+    "react native": [
+      "react native"
+    ],
+    "html": [
+      "html",
+      "html5"
+    ],
+    "css": [
+      "css",
+      "css3"
+    ],
+    "sass": [
+      "sass"
+    ],
+    "graphql": [
+      "graphql"
+    ],
+    "rest apis": [
+      "rest apis",
+      "restful apis",
+      "rest api"
+    ],
+    "grpc": [
+      "grpc"
+    ],
+    "cypress": [
+      "cypress"
+    ],
+    "playwright": [
+      "playwright"
+    ],
+    "selenium": [
+      "selenium"
+    ],
+    "junit": [
+      "junit"
+    ],
+    "pytest": [
+      "pytest"
+    ],
+    "elasticsearch": [
+      "elasticsearch"
+    ],
+    "opensearch": [
+      "opensearch"
+    ],
+    "dynamodb": [
+      "dynamodb"
+    ],
+    "statistics": [
+      "statistics"
+    ],
+    "statistical analysis": [
+      "statistical analysis"
+    ],
+    "a b testing": [
+      "a b testing"
+    ],
+    "r": [
+      "r programming",
+      "rstudio"
+    ],
+    "sas": [
+      "sas"
+    ],
+    "spss": [
+      "spss"
+    ],
+    "stata": [
+      "stata"
+    ],
+    "computer vision": [
+      "computer vision"
+    ],
+    "reinforcement learning": [
+      "reinforcement learning"
+    ],
+    "mlops": [
+      "mlops"
+    ],
+    "langchain": [
+      "langchain"
+    ],
+    "retrieval-augmented generation": [
+      "retrieval-augmented generation",
+      "rag"
+    ],
+    "english": [
+      "english"
+    ],
+    "spanish": [
+      "spanish"
+    ],
+    "french": [
+      "french"
+    ],
+    "german": [
+      "german"
+    ],
+    "mandarin": [
+      "mandarin"
+    ]
+  },
+  "related_skills": {
+    "mysql": [
+      "postgresql"
+    ],
+    "postgresql": [
+      "mysql"
+    ],
+    "react": [
+      "vue.js",
+      "angular"
+    ],
+    "aws": [
+      "azure",
+      "gcp"
+    ],
+    "strategic sourcing": [
+      "procurement",
+      "supplier relationship management",
+      "rfx",
+      "cost modeling"
+    ],
+    "procurement": [
+      "strategic sourcing",
+      "supplier relationship management",
+      "contract negotiation",
+      "purchasing"
+    ],
+    "cost modeling": [
+      "spend analysis",
+      "total cost of ownership",
+      "bill of materials"
+    ],
+    "sap mm": [
+      "sap ariba",
+      "erp",
+      "oracle ebs"
+    ],
+    "oracle ebs": [
+      "sap mm",
+      "erp",
+      "netsuite"
+    ],
+    "six sigma": [
+      "continuous improvement"
+    ],
+    "inventory management": [
+      "demand planning"
+    ],
+    "dfm": [
+      "bill of materials",
+      "npi"
+    ],
+    "sap ariba": [
+      "coupa",
+      "jaggaer",
+      "oracle procurement cloud"
+    ],
+    "coupa": [
+      "sap ariba",
+      "jaggaer"
+    ],
+    "sap": [
+      "oracle erp",
+      "netsuite",
+      "microsoft dynamics"
+    ],
+    "oracle erp": [
+      "sap",
+      "netsuite"
+    ],
+    "tableau": [
+      "power bi",
+      "looker"
+    ],
+    "power bi": [
+      "tableau",
+      "looker"
+    ],
+    "looker": [
+      "tableau",
+      "power bi"
+    ],
+    "gcp": [
+      "aws",
+      "azure"
+    ],
+    "azure": [
+      "aws",
+      "gcp"
+    ],
+    "salesforce": [
+      "hubspot",
+      "microsoft dynamics"
+    ],
+    "hubspot": [
+      "salesforce"
+    ],
+    "django": [
+      "flask",
+      "fastapi"
+    ],
+    "flask": [
+      "django",
+      "fastapi"
+    ],
+    "fastapi": [
+      "django",
+      "flask"
+    ]
+  },
+  "roles": [
+    {
+      "family": "Technology",
+      "subfamily": "Backend Engineering",
+      "aliases": [
+        "backend engineer",
+        "backend software engineer",
+        "api engineer",
+        "back end engineer",
+        "backend developer",
+        "back end developer",
+        "api developer"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "Frontend Engineering",
+      "aliases": [
+        "frontend engineer",
+        "front end engineer",
+        "ui engineer",
+        "frontend developer",
+        "front end developer",
+        "react developer"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "Full Stack Engineering",
+      "aliases": [
+        "full stack engineer",
+        "fullstack engineer",
+        "full stack developer",
+        "fullstack developer"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "Software Engineering",
+      "aliases": [
+        "software engineer",
+        "software development engineer",
+        "sde",
+        "developer",
+        "software developer",
+        "programmer",
+        "web developer",
+        "application developer",
+        "member of technical staff"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "Data Engineering",
+      "aliases": [
+        "data engineer",
+        "etl engineer",
+        "big data engineer",
+        "analytics engineer",
+        "data platform engineer"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "AI/ML",
+      "aliases": [
+        "machine learning engineer",
+        "ai engineer",
+        "data scientist",
+        "ml engineer",
+        "machine learning scientist",
+        "applied scientist",
+        "research scientist",
+        "deep learning engineer",
+        "nlp engineer",
+        "computer vision engineer"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "DevOps/SRE",
+      "aliases": [
+        "devops engineer",
+        "site reliability engineer",
+        "sre",
+        "platform engineer",
+        "infrastructure engineer",
+        "cloud engineer",
+        "devops"
+      ]
+    },
+    {
+      "family": "Business",
+      "subfamily": "Product Management",
+      "aliases": [
+        "product manager",
+        "product owner",
+        "product lead",
+        "technical product manager",
+        "senior product manager",
+        "group product manager"
+      ]
+    },
+    {
+      "family": "Design",
+      "subfamily": "Product Design",
+      "aliases": [
+        "product designer",
+        "ux designer",
+        "ui designer",
+        "ux researcher",
+        "graphic designer",
+        "visual designer",
+        "interaction designer",
+        "ux ui designer"
+      ]
+    },
+    {
+      "family": "Sales",
+      "subfamily": "Sales",
+      "aliases": [
+        "sales executive",
+        "account executive",
+        "account manager",
+        "sales representative",
+        "sales manager",
+        "business development representative",
+        "business development manager",
+        "sales development representative",
+        "inside sales",
+        "account director"
+      ]
+    },
+    {
+      "family": "Marketing",
+      "subfamily": "Marketing",
+      "aliases": [
+        "marketing manager",
+        "growth marketer",
+        "product marketing manager",
+        "digital marketing manager",
+        "content marketing manager",
+        "marketing specialist",
+        "seo specialist",
+        "brand manager",
+        "marketing coordinator",
+        "growth manager",
+        "demand generation manager"
+      ]
+    },
+    {
+      "family": "Finance",
+      "subfamily": "Finance",
+      "aliases": [
+        "financial analyst",
+        "accountant",
+        "finance manager",
+        "fp&a analyst",
+        "financial planning analyst",
+        "controller",
+        "accounting manager",
+        "staff accountant",
+        "senior accountant",
+        "tax manager",
+        "auditor",
+        "treasury analyst"
+      ]
+    },
+    {
+      "family": "Human Resources",
+      "subfamily": "Recruiting",
+      "aliases": [
+        "recruiter",
+        "talent acquisition",
+        "technical recruiter",
+        "talent acquisition partner",
+        "talent acquisition specialist",
+        "sourcer",
+        "recruiting coordinator",
+        "talent partner",
+        "recruitment consultant"
+      ]
+    },
+    {
+      "family": "Supply Chain & Procurement",
+      "subfamily": "Procurement",
+      "aliases": [
+        "procurement specialist ii",
+        "procurement specialist",
+        "senior procurement specialist",
+        "procurement manager",
+        "senior procurement manager",
+        "assistant procurement manager",
+        "procurement associate",
+        "senior procurement analyst",
+        "procurement analyst",
+        "senior procurement officer",
+        "procurement officer",
+        "senior procurement engineer",
+        "procurement engineer",
+        "senior procurement consultant",
+        "purchasing consultant",
+        "head of procurement",
+        "procurement coordinator",
+        "procurement assistant",
+        "procurement buyer",
+        "sourcing and procurement coordinator",
+        "head of supply chain, sourcing & procurement",
+        "procurement"
+      ]
+    },
+    {
+      "family": "Supply Chain & Procurement",
+      "subfamily": "Strategic Sourcing",
+      "aliases": [
+        "strategic sourcing manager",
+        "senior manager strategic sourcing",
+        "senior sourcing manager",
+        "assistant sourcing manager",
+        "sourcing manager",
+        "strategic sourcing specialist",
+        "senior sourcing specialist",
+        "global sourcing specialist",
+        "sourcing specialist",
+        "senior sourcing analyst",
+        "global sourcing lead",
+        "senior manager global sourcing",
+        "sourcing lead",
+        "technical sourcing and cost management intern",
+        "strategic sourcing",
+        "sourcing"
+      ]
+    },
+    {
+      "family": "Supply Chain & Procurement",
+      "subfamily": "Commodity Management",
+      "aliases": [
+        "senior commodity manager",
+        "global commodity manager",
+        "purchasing commodity manager",
+        "commodity manager",
+        "commodity lead",
+        "senior commodity buyer",
+        "commodity buyer",
+        "commodity specialist",
+        "commodity analyst",
+        "category manager",
+        "category strategy"
+      ]
+    },
+    {
+      "family": "Supply Chain & Procurement",
+      "subfamily": "Supply Chain Management",
+      "aliases": [
+        "integrated global supply chain manager",
+        "global supply chain manager",
+        "global supply manager",
+        "supply chain project management professional",
+        "supply chain project manager",
+        "head of supply chain",
+        "global supply chain lead",
+        "global supply chain specialist",
+        "global supply chain analyst",
+        "supply chain manager",
+        "supply chain specialist",
+        "supply chain analyst",
+        "supply chain"
+      ]
+    },
+    {
+      "family": "Supply Chain & Procurement",
+      "subfamily": "Purchasing & Buying",
+      "aliases": [
+        "senior purchasing manager",
+        "assistant purchasing manager",
+        "purchasing manager",
+        "purchasing supervisor",
+        "senior purchasing officer",
+        "purchasing officer",
+        "senior purchasing agent",
+        "assistant purchasing agent",
+        "purchasing agent",
+        "senior purchasing specialist",
+        "purchase specialist",
+        "purchasing coordinator",
+        "senior purchasing analyst",
+        "purchasing analyst",
+        "senior purchasing assistant",
+        "purchasing assistant",
+        "purchasing representative",
+        "purchasing buyer",
+        "purchasing associate",
+        "senior buyer",
+        "associate buyer",
+        "junior buyer",
+        "assistant buyer",
+        "materials buyer",
+        "buyer",
+        "purchasing"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "Engineering Management",
+      "aliases": [
+        "engineering manager",
+        "software engineering manager",
+        "manager software engineering",
+        "head of engineering",
+        "director of engineering",
+        "vp of engineering",
+        "engineering director",
+        "director software engineering",
+        "software engineering director",
+        "head of software engineering",
+        "director of software engineering",
+        "software development manager",
+        "engineering lead manager"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "Mobile Engineering",
+      "aliases": [
+        "mobile engineer",
+        "mobile developer",
+        "ios engineer",
+        "ios developer",
+        "android engineer",
+        "android developer",
+        "flutter developer",
+        "react native developer"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "Security Engineering",
+      "aliases": [
+        "security engineer",
+        "cybersecurity analyst",
+        "cyber security analyst",
+        "information security analyst",
+        "security analyst",
+        "penetration tester",
+        "soc analyst",
+        "application security engineer"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "QA/Test Engineering",
+      "aliases": [
+        "qa engineer",
+        "quality assurance engineer",
+        "test engineer",
+        "sdet",
+        "software development engineer in test",
+        "automation test engineer",
+        "qa analyst",
+        "qa tester",
+        "test automation engineer"
+      ]
+    },
+    {
+      "family": "Technology",
+      "subfamily": "Hardware Engineering",
+      "aliases": [
+        "hardware engineer",
+        "electrical engineer",
+        "embedded software engineer",
+        "embedded engineer",
+        "firmware engineer",
+        "mechanical engineer",
+        "asic engineer",
+        "fpga engineer",
+        "electronics engineer"
+      ]
+    },
+    {
+      "family": "Data",
+      "subfamily": "Data Analytics",
+      "aliases": [
+        "data analyst",
+        "business intelligence analyst",
+        "bi analyst",
+        "bi developer",
+        "reporting analyst",
+        "analytics analyst",
+        "data analytics"
+      ]
+    },
+    {
+      "family": "Business",
+      "subfamily": "Project & Program Management",
+      "aliases": [
+        "project manager",
+        "program manager",
+        "technical program manager",
+        "project coordinator",
+        "program coordinator"
+      ]
+    },
+    {
+      "family": "Business",
+      "subfamily": "Business Analysis",
+      "aliases": [
+        "business analyst",
+        "business systems analyst",
+        "systems analyst"
+      ]
+    },
+    {
+      "family": "Operations",
+      "subfamily": "Operations",
+      "aliases": [
+        "operations manager",
+        "operations analyst",
+        "operations coordinator",
+        "operations specialist",
+        "business operations"
+      ]
+    },
+    {
+      "family": "Supply Chain & Procurement",
+      "subfamily": "Logistics",
+      "aliases": [
+        "logistics manager",
+        "logistics coordinator",
+        "logistics specialist",
+        "logistics analyst",
+        "warehouse manager",
+        "transportation manager"
+      ]
+    },
+    {
+      "family": "Customer Success",
+      "subfamily": "Customer Success & Support",
+      "aliases": [
+        "customer success manager",
+        "customer support specialist",
+        "customer service representative",
+        "technical support engineer",
+        "support engineer",
+        "customer support",
+        "client success manager"
+      ]
+    },
+    {
+      "family": "Human Resources",
+      "subfamily": "People Operations",
+      "aliases": [
+        "hr manager",
+        "human resources manager",
+        "hr business partner",
+        "hrbp",
+        "people partner",
+        "hr generalist",
+        "people operations",
+        "hr coordinator",
+        "compensation analyst",
+        "benefits specialist"
+      ]
+    },
+    {
+      "family": "Legal",
+      "subfamily": "Legal & Compliance",
+      "aliases": [
+        "legal counsel",
+        "counsel",
+        "attorney",
+        "lawyer",
+        "paralegal",
+        "compliance analyst",
+        "compliance manager",
+        "compliance officer"
+      ]
+    },
+    {
+      "family": "Administrative",
+      "subfamily": "Administrative",
+      "aliases": [
+        "administrative assistant",
+        "executive assistant",
+        "office manager",
+        "receptionist",
+        "office administrator",
+        "administrative coordinator"
+      ]
+    },
+    {
+      "family": "Executive",
+      "subfamily": "Executive Leadership",
+      "aliases": [
+        "chief executive officer",
+        "chief operating officer",
+        "general manager",
+        "managing director",
+        "vice president"
+      ]
+    },
+    {
+      "family": "Healthcare",
+      "subfamily": "Healthcare",
+      "aliases": [
+        "registered nurse",
+        "nurse practitioner",
+        "physician",
+        "medical assistant",
+        "pharmacist",
+        "clinical research associate"
+      ]
+    }
+  ]
+}
