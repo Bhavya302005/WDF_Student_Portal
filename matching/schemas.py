@@ -50,6 +50,10 @@ class JobIntelligence(BaseModel):
     source_board: Optional[str] = None
     job_url: Optional[str] = None
     apply_url: Optional[str] = None
+    # Set from the full description in SQL when known; None means "detect from
+    # cleaned_text" (see work_authorization.authorized_for).
+    sponsorship_unavailable: Optional[bool] = None
+    citizenship_required: Optional[bool] = None
     embedding: List[float] = Field(default_factory=list)
     lexical_terms: List[str] = Field(default_factory=list)
     active: bool = True

@@ -28,7 +28,7 @@ class DeterministicScorer:
         preferred = self._skills(profile.skills, job.preferred_skills)
         role = self._role(profile, job.role_family, job.role_subfamily, job.title)
         experience = self._experience(profile.professional_years, job.experience_min_years, job.experience_max_years)
-        seniority = _seniority_fit(profile.professional_years, job.title)
+        seniority = _seniority_fit(_profile_level(profile), job.title)
         location = self._location(profile, job.location, job.country, job.work_mode)
         education = self._education(profile.education, job.education_requirements)
         preferences = self._preference(profile, job.employment_type, job.work_mode)
@@ -59,6 +59,8 @@ class DeterministicScorer:
             score = min(score, .59)
         if seniority is not None and seniority < .5:
             score = min(score, .69)
+        if location == 0.0 and _unwilling_to_move(profile, job):
+            score = min(score, .59)
         label = "High" if score >= .75 else "Medium" if score >= .50 else "Low"
         why = explanation(required, preferred, role, experience, location)
         return Recommendation(job_id=job.job_id, title=job.title, company=job.company,
@@ -138,7 +140,12 @@ class DeterministicScorer:
         wanted = [normalize_text(x) for x in profile.locations]
         actual = normalize_text(f"{location or ''} {country or ''}")
         matches = [index for index, value in enumerate(wanted) if value in actual]
-        return _rank_value(min(matches), len(wanted)) if matches else .4 if canonical_work_mode(work_mode) == "remote" else 0.0
+        if matches:
+            return _rank_value(min(matches), len(wanted))
+        if canonical_work_mode(work_mode) == "remote":
+            return .4
+        # Elsewhere and on site: fine for someone willing to relocate.
+        return .6 if profile.willing_to_relocate else 0.0
 
     @staticmethod
     def _education(candidate: list[str], required: list[str]) -> float | None:
@@ -229,11 +236,31 @@ def _candidate_level(years: float) -> int:
     return 0 if years < .5 else 1 if years < 2 else 2 if years < 5 else 3 if years < 8 else 4 if years < 12 else 5
 
 
-def _seniority_fit(years: float | None, title: str) -> float | None:
+# Target career level answers (resume_questions.json and the onboarding chips)
+# on the _title_level scale.
+_CAREER_LEVELS = {"intern": 0, "entry-level": .5, "entry level": .5, "entry": .5, "junior": 1,
+                  "mid": 2, "senior": 3, "lead": 4, "staff": 4, "principal": 4, "director": 5}
+
+
+def _profile_level(profile: CandidateProfile) -> float | None:
+    """The stated target level wins; otherwise infer it from professional years."""
+    stated = _CAREER_LEVELS.get(normalize_text(profile.career_level))
+    if stated is not None:
+        return stated
+    return None if profile.professional_years is None else _candidate_level(profile.professional_years)
+
+
+def _unwilling_to_move(profile: CandidateProfile, job) -> bool:
+    """On-site work outside every preferred location, for someone who said no to relocating."""
+    return (profile.willing_to_relocate is False and bool(profile.locations)
+            and bool(job.location or job.country) and canonical_work_mode(job.work_mode) != "remote")
+
+
+def _seniority_fit(level: float | None, title: str) -> float | None:
     """1.0 at the candidate's level, 0.75 one level apart, 0.3 two, 0 beyond."""
-    if years is None:
+    if level is None:
         return None
-    gap = abs(_title_level(title) - _candidate_level(years))
+    gap = abs(_title_level(title) - level)
     return 1.0 if gap <= .5 else .75 if gap <= 1 else .3 if gap <= 2 else 0.0
 
 

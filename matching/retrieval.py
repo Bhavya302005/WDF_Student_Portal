@@ -17,6 +17,7 @@ from .ingestion import (_compensation, _datetime, _experience,
                         _strings)
 from .repository import MatchingRepository
 from .schemas import CandidateProfile, JobIntelligence, RecommendationRequest
+from .work_authorization import CITIZENSHIP_PATTERN, NO_SPONSORSHIP_PATTERN, authorized_for
 
 log = logging.getLogger("matching.retrieval")
 
@@ -81,7 +82,7 @@ class HybridRetriever:
         if profile.max_job_age_days and job.posted_at:
             posted = job.posted_at if job.posted_at.tzinfo else job.posted_at.replace(tzinfo=timezone.utc)
             if (datetime.now(timezone.utc) - posted).days > profile.max_job_age_days: return False
-        return True
+        return authorized_for(job, profile)
 
     @staticmethod
     def _lexical(query_terms: set[str], job: JobIntelligence) -> float:
@@ -242,7 +243,7 @@ class PostgresHybridRetriever:
         lexical_scores = {row["job_id"]: float(row["lexical_score"]) for row in lexical}
         return [RetrievedJob(jobs[job_id], semantic_scores.get(job_id, 0.0),
                              lexical_scores.get(job_id, 0.0), score)
-                for job_id, score in fused if job_id in jobs]
+                for job_id, score in fused if job_id in jobs and authorized_for(jobs[job_id], profile)]
 
     def _retrieve_from_source_jobs(self, conn, profile: CandidateProfile,
                                    request: RecommendationRequest) -> list[RetrievedJob]:
@@ -382,6 +383,9 @@ _SOURCE_COLUMNS = """j.id, j.job_title, j.company, j.skills_required, j.skills_p
        j.salary_min, j.salary_max, j.salary_currency, j.salary_period, j.posted_at,
        j.source_board, j.job_url, j.apply_url, j.updated_at,
        left(j.description, 4000) as description,
+       -- Over the full text: restrictions usually sit after the first 4000 chars.
+       coalesce(j.description, '') ~* '""" + NO_SPONSORSHIP_PATTERN.replace("'", "''") + """' as sponsorship_unavailable,
+       coalesce(j.description, '') ~* '""" + CITIZENSHIP_PATTERN.replace("'", "''") + """' as citizenship_required,
        j.extraction -> 'skills' as extraction_skills,
        j.extraction -> 'education' as extraction_education"""
 
@@ -542,6 +546,8 @@ def _source_job_intelligence(raw: dict[str, Any], taxonomy) -> JobIntelligence:
         source_board=normalize_text(raw.get("source_board")) or None,
         job_url=str(raw.get("job_url") or "") or None,
         apply_url=str(raw.get("apply_url") or "") or None,
+        sponsorship_unavailable=raw.get("sponsorship_unavailable"),
+        citizenship_required=raw.get("citizenship_required"),
         lexical_terms=sorted(set(_terms(matching_text))),
         active=True, source_hash=stable_hash([raw.get("id"), raw.get("updated_at")]),
         processing_version="direct-source-v1", normalization_version="normalize-v1",

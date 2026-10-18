@@ -6,7 +6,7 @@ from matching.config import MatchingSettings
 from matching.factory import local_stack
 from matching.retrieval import _role_query_terms, _source_filters, _source_job_intelligence
 from matching.schemas import CandidateProfile, FeatureScores, Recommendation, RecommendationRequest
-from matching.scoring import _seniority_fit, _title_level
+from matching.scoring import _candidate_level, _profile_level, _seniority_fit, _title_level
 from matching.service import _collapse_duplicates, _diversify
 from matching.taxonomy import Taxonomy
 
@@ -53,11 +53,17 @@ class SeniorityTests(unittest.TestCase):
         self.assertEqual(_title_level("VP Procurement"), 6)
 
     def test_fit_degrades_with_level_gap(self) -> None:
-        self.assertEqual(_seniority_fit(8, "Procurement Manager"), 1.0)
-        self.assertEqual(_seniority_fit(8, "Senior Buyer"), .75)
-        self.assertEqual(_seniority_fit(1, "Senior Buyer"), .3)
-        self.assertEqual(_seniority_fit(1, "Director of Procurement"), 0.0)
+        self.assertEqual(_seniority_fit(_candidate_level(8), "Procurement Manager"), 1.0)
+        self.assertEqual(_seniority_fit(_candidate_level(8), "Senior Buyer"), .75)
+        self.assertEqual(_seniority_fit(_candidate_level(1), "Senior Buyer"), .3)
+        self.assertEqual(_seniority_fit(_candidate_level(1), "Director of Procurement"), 0.0)
         self.assertIsNone(_seniority_fit(None, "Senior Buyer"))
+
+    def test_stated_career_level_overrides_years(self) -> None:
+        from matching.schemas import CandidateProfile
+        self.assertEqual(_profile_level(CandidateProfile(user_id="u", professional_years=1, career_level="senior")), 3)
+        self.assertEqual(_profile_level(CandidateProfile(user_id="u", professional_years=1)), 1)
+        self.assertIsNone(_profile_level(CandidateProfile(user_id="u")))
 
 
 class RankingTests(unittest.TestCase):
