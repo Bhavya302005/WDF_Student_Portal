@@ -3,6 +3,9 @@
 -- Job details stay in the jobs database; this table holds only what ANN search
 -- and hard filters need. There is no foreign key: public.jobs lives elsewhere.
 create extension if not exists vector;
+-- Load pgvector's library so its hnsw.* settings exist: without it, a non-superuser
+-- (Neon) may not name them in match_job_vectors' SET clause below.
+select '[1]'::halfvec;
 
 create table if not exists public.job_vectors (
   job_id text primary key,
