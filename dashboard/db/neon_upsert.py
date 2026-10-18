@@ -21,6 +21,7 @@ Rules
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import logging
@@ -111,7 +112,6 @@ _FIELD_ALIASES: dict[str, str] = {
     "application_url": "apply_url",
     "date_posted":    "posted_at",
     "posted_date":    "posted_at",
-    "scraped_at":     "posted_at",
     "job_description": "description",
     "desc":           "description",
     "skills":         "skills_required",
@@ -198,19 +198,29 @@ def _parse_posted_at(value: Any) -> datetime | None:
         return None
 
 
+def _text(value: Any) -> str | None:
+    """CSV round-trips turn missing values into ''; store them as NULL."""
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
 def _normalize_skills(value: Any) -> list[str]:
     if not value:
         return []
     if isinstance(value, list):
         return [str(s).strip() for s in value if s]
     if isinstance(value, str):
-        # Try JSON parse first
-        try:
-            parsed = json.loads(value)
+        # JSON first, then Python-repr lists written by csv.DictWriter.
+        for parse in (json.loads, ast.literal_eval):
+            try:
+                parsed = parse(value)
+            except (ValueError, SyntaxError):
+                continue
             if isinstance(parsed, list):
                 return [str(s).strip() for s in parsed if s]
-        except (json.JSONDecodeError, ValueError):
-            pass
+            break
         # Comma-separated fallback
         return [s.strip() for s in value.split(",") if s.strip()]
     return []
@@ -256,46 +266,56 @@ def _normalize_is_remote(value: Any) -> bool | None:
 
 def map_job(raw: dict) -> dict:
     """Map a raw scraper job dict to a Neon public.jobs row dict."""
-    # 1. Apply field aliases
-    job: dict[str, Any] = {}
+    # 1. Apply field aliases. A canonical field always wins over an alias,
+    # whatever the column order: rows carry both `skills` (every skill) and
+    # `skills_required`, and the alias must not shadow the real value.
+    job: dict[str, Any] = {key: val for key, val in raw.items() if _FIELD_ALIASES.get(key, key) == key}
     for key, val in raw.items():
         canonical = _FIELD_ALIASES.get(key, key)
-        # Don't overwrite already-set canonical key with alias
-        if canonical not in job:
+        if canonical != key and job.get(canonical) in (None, ""):
             job[canonical] = val
 
     extraction = _normalize_json_object(job.get("extraction"))
 
+    # Required = explicit requirements plus unqualified mentions, never the
+    # skills a JD explicitly marks as preferred.
+    preferred = _normalize_skills(job.get("skills_preferred"))
+    required = _normalize_skills(job.get("skills_required"))
+    for skill in _normalize_skills(raw.get("skills")):
+        if skill not in required and skill not in preferred:
+            required.append(skill)
+
     return {
         "id":                      _stable_id(raw),
-        "job_title":               job.get("job_title") or job.get("title") or "",
-        "company":                 job.get("company") or job.get("company_name"),
-        "description":             job.get("description") or job.get("job_description"),
-        "skills_required":         Jsonb(_normalize_skills(job.get("skills_required") or job.get("skills"))),
-        "skills_preferred":        Jsonb(_normalize_skills(job.get("skills_preferred"))),
+        "job_title":               _text(job.get("job_title") or job.get("title")) or "",
+        "company":                 _text(job.get("company") or job.get("company_name")),
+        "description":             _text(job.get("description") or job.get("job_description")),
+        "skills_required":         Jsonb(required),
+        "skills_preferred":        Jsonb(preferred),
         "experience_min":          _parse_float(job.get("experience_min")),
         "experience_max":          _parse_float(job.get("experience_max")),
-        "experience":              job.get("experience"),
-        "location":                job.get("location"),
-        "country":                 job.get("country"),
+        "experience":              _text(job.get("experience")),
+        "location":                _text(job.get("location")),
+        "country":                 _text(job.get("country")),
         "work_mode":               _normalize_work_mode(job.get("work_mode")),
         "is_remote":               _normalize_is_remote(job.get("is_remote") or job.get("remote")),
         "job_type":                _normalize_job_type(job.get("job_type") or job.get("employment_type")),
-        "role_category":           job.get("role_category"),
+        "role_category":           _text(job.get("role_category")),
         "status":                  job.get("status") or "active",
-        "salary":                  job.get("salary"),
+        "salary":                  _text(job.get("salary")),
         "salary_min":              _parse_float(job.get("salary_min")),
         "salary_max":              _parse_float(job.get("salary_max")),
-        "salary_currency":         job.get("salary_currency"),
-        "salary_period":           job.get("salary_period"),
-        "posted_at":               _parse_posted_at(job.get("posted_at") or job.get("date_posted") or job.get("scraped_at")),
+        "salary_currency":         _text(job.get("salary_currency")),
+        "salary_period":           _text(job.get("salary_period")),
+        # Scrape time is only a last resort when no board posting date exists.
+        "posted_at":               _parse_posted_at(job.get("posted_at") or job.get("created_at") or job.get("scraped_at")),
         "source_board":            job.get("source_board") or job.get("scraper_type"),
-        "basic_qualifications":    job.get("basic_qualifications"),
-        "preferred_qualifications": job.get("preferred_qualifications"),
-        "key_responsibilities":    job.get("key_responsibilities"),
+        "basic_qualifications":    _text(job.get("basic_qualifications")),
+        "preferred_qualifications": _text(job.get("preferred_qualifications")),
+        "key_responsibilities":    _text(job.get("key_responsibilities")),
         "extraction":              Jsonb(extraction) if extraction is not None else None,
-        "job_url":                 job.get("job_url") or job.get("url") or job.get("link"),
-        "apply_url":               job.get("apply_url") or job.get("apply_link"),
+        "job_url":                 _text(job.get("job_url") or job.get("url") or job.get("link")),
+        "apply_url":               _text(job.get("apply_url") or job.get("apply_link")),
     }
 
 

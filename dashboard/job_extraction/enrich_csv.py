@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
 import json
 from pathlib import Path
@@ -22,6 +23,13 @@ def _decode(value: Any) -> Any:
     try:
         return json.loads(value)
     except (json.JSONDecodeError, TypeError):
+        pass
+    # Scraper shard CSVs are written with csv.DictWriter, which stores nested
+    # values as Python reprs ({'a': None}). Losing them here would discard the
+    # board-provided job type/salary kept in extraction.source_fields.
+    try:
+        return ast.literal_eval(value)
+    except (ValueError, SyntaxError, MemoryError, RecursionError):
         return value
 
 

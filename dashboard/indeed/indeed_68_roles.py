@@ -182,6 +182,9 @@ DESC_RETRY_WORKERS   = 6      # slower second pass for unresolved detail pages
 DESC_RETRY_DELAY     = 5      # cooldown before the second description pass
 DESC_TIMEOUT         = 15     # seconds per description request
 DESC_RETRIES         = 2      # retries per failed description fetch
+# Indeed appends its structured footer (Job Type / Pay / Work Location) at the
+# end of the description, so a short cap silently drops those fields.
+DESC_MAX_CHARS       = 20_000
 
 # -- Post-time mapping --------------------------------------------------------
 POST_TIME_MAP: dict[str, int | None] = {
@@ -370,6 +373,24 @@ def export_strict_datasets() -> None:
 
 # -- Parallel description fetching -------------------------------------------
 
+def _parse_indeed_description(page_html: str) -> str:
+    """Extract the full description node, keeping line breaks for section headings."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(page_html, "html.parser")
+    node = soup.find(id="jobDescriptionText") or soup.find(
+        ["div", "section"],
+        class_=lambda value: value and any(
+            marker in " ".join(value) if isinstance(value, list) else marker in str(value)
+            for marker in ("jobsearch-jobDescriptionText", "jobDescription")
+        ),
+    )
+    if not node:
+        return ""
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in node.get_text("\n").splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
 def _fetch_indeed_description(url: str) -> str:
     """
     Fetch full job description from an Indeed job URL.
@@ -388,21 +409,9 @@ def _fetch_indeed_description(url: str) -> str:
             try:
                 resp = httpx.get(url, headers=headers, timeout=DESC_TIMEOUT, follow_redirects=True)
                 if resp.status_code == 200:
-                    text = resp.text
-                    # Indeed's description is typically in a jobsearch-jobdescription-theme div
-                    patterns = [
-                        r'<div[^>]*id="jobDescriptionText"[^>]*>(.*?)</div>',
-                        r'<div[^>]*class="[^"]*jobsearch-jobDescriptionText[^"]*"[^>]*>(.*?)</div>',
-                        r'<section[^>]*class="[^"]*jobDescription[^"]*"[^>]*>(.*?)</section>',
-                    ]
-                    for pattern in patterns:
-                        match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
-                        if match:
-                            raw = match.group(1)
-                            clean = re.sub(r'<[^>]+>', ' ', raw)
-                            clean = re.sub(r'\s+', ' ', clean).strip()
-                            if len(clean) > 100:
-                                return clean[:8000]
+                    clean = _parse_indeed_description(resp.text)
+                    if len(clean) > 100:
+                        return clean[:DESC_MAX_CHARS]
                 elif resp.status_code == 429:
                     time.sleep(5 * (attempt + 1))
                     continue
@@ -621,7 +630,7 @@ def scrape_role(
             title   = str(row.get("title",   "") or "").strip()
             company = str(row.get("company", "") or "").strip()
             loc     = str(row.get("location","") or "").strip()
-            desc    = str(row.get("description", "") or "")[:5000]
+            desc    = str(row.get("description", "") or "")[:DESC_MAX_CHARS]
 
             # Global cross-role dedup
             job_id = make_job_id(title, company, loc)
@@ -674,6 +683,7 @@ def scrape_role(
                 "source_board":    "Indeed",
                 "scraper_type":    "jobspy",
                 "created_at":      date_str,
+                "posted_at":       date_str,
                 "scraped_at":      datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
             }
 

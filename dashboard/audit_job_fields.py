@@ -24,7 +24,8 @@ FIELD_GROUPS: dict[str, tuple[str, ...]] = {
     "url": ("job_url", "url", "job_link", "link"),
     "apply URL": ("apply_url", "job_url_direct", "application_url", "apply_link"),
     "description": ("description", "job_description", "content"),
-    "posted": ("posted_at", "date_posted", "created_at", "scraped_at"),
+    # scraped_at is when we fetched the job, not when it was posted.
+    "posted": ("posted_at", "date_posted", "created_at"),
     "salary": ("salary", "salary_min", "salary_max", "compensation"),
     "skills": ("skills_required", "skills_preferred", "skills"),
     "work mode": ("work_mode", "is_remote"),
