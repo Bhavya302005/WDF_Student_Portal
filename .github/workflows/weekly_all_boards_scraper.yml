@@ -355,15 +355,31 @@ jobs:
             indeed/indeed_jobs/indeed_68roles_jobs_us.csv \
             "*_jobs_weekly.json"
 
+      # Fails visibly when any batch is rejected (e.g. storage quota), instead
+      # of reporting a green run with a partially updated database.
       - name: Push jobs to Neon (public.jobs)
-        continue-on-error: true
         run: |
           python3 -c "
-          import json, glob, csv, os, sys
+          import json, glob, csv, logging, os, sys
           sys.path.insert(0, '.')
+          logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
           from db.neon_upsert import save_jobs
 
           all_jobs = []
+
+          # LinkedIn / Indeed first: they are small and must not be starved
+          # by a failure partway through the large ATS sources.
+          for pattern in ['linkedin/linkedin_jobs/linkedin_68roles_jobs_us.csv', 'indeed/indeed_jobs/indeed_68roles_jobs_us.csv']:
+              for f in glob.glob(pattern):
+                  try:
+                      rows = list(csv.DictReader(open(f, encoding='utf-8')))
+                      board = 'LinkedIn' if 'linkedin' in f else 'Indeed'
+                      for r in rows:
+                          r.setdefault('source_board', board)
+                      all_jobs.extend(rows)
+                      print(f'Loaded {len(rows)} rows from {f}')
+                  except Exception as e:
+                      print(f'Skip {f}: {e}')
 
           # Load ATS JSON boards
           for f in glob.glob('*.json'):
@@ -378,22 +394,11 @@ jobs:
               except Exception as e:
                   print(f'Skip {f}: {e}')
 
-          # Load LinkedIn / Indeed CSVs
-          for pattern in ['linkedin/linkedin_jobs/linkedin_68roles_jobs_us.csv', 'indeed/indeed_jobs/indeed_68roles_jobs_us.csv']:
-              for f in glob.glob(pattern):
-                  try:
-                      rows = list(csv.DictReader(open(f, encoding='utf-8')))
-                      board = 'LinkedIn' if 'linkedin' in f else 'Indeed'
-                      for r in rows:
-                          r.setdefault('source_board', board)
-                      all_jobs.extend(rows)
-                      print(f'Loaded {len(rows)} rows from {f}')
-                  except Exception as e:
-                      print(f'Skip {f}: {e}')
-
           print(f'Total jobs to upsert: {len(all_jobs)}')
-          n = save_jobs(all_jobs)
+          n = save_jobs(all_jobs, expire_missing=os.environ.get('EXPIRE_MISSING') == 'true')
           print(f'Neon upsert complete: {n} rows')
           "
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          # Reused artifacts are old snapshots; never expire jobs based on them.
+          EXPIRE_MISSING: ${{ github.event_name != 'workflow_dispatch' || inputs.reuse_artifacts_run_id == '' }}
