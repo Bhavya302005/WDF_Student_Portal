@@ -156,11 +156,20 @@ def _connect(url: str, *, read_only: bool = False):
     return psycopg.connect(url, autocommit=True, row_factory=dict_row)
 
 
+# Parallel shard runners all apply the idempotent schema at start-up; concurrent
+# CREATE OR REPLACE FUNCTION fails with "tuple concurrently updated", so take turns.
+_SCHEMA_LOCK = 7_412_093_001
+
+
 def _apply_schema(vectors, *, index: bool) -> None:
     from pgvector.psycopg import register_vector
-    vectors.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
-    if index:
-        vectors.execute(INDEX_PATH.read_text(encoding="utf-8"))
+    vectors.execute("select pg_advisory_lock(%s)", (_SCHEMA_LOCK,))
+    try:
+        vectors.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
+        if index:
+            vectors.execute(INDEX_PATH.read_text(encoding="utf-8"))
+    finally:
+        vectors.execute("select pg_advisory_unlock(%s)", (_SCHEMA_LOCK,))
     register_vector(vectors)
 
 
