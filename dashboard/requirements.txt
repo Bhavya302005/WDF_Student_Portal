@@ -8,4 +8,5 @@ curl_cffi
 playwright
 patchright
 python-jobspy
+beautifulsoup4
 psycopg[binary]

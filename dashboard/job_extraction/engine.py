@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import re
 
-VERSION = 'jd-v3'
+VERSION = 'jd-v4'
 
 _BOUNDARY = re.compile(r'[;\n]|[.!?](?=\s|$)')
 
@@ -222,7 +222,40 @@ _WORK_PATTERNS = [
 ]
 
 
+# Board-published labels (e.g. Indeed's "Job Type: Full-time" / "Work Location:
+# In person" footer). Markdown bullets/bold around the label are tolerated.
+_LABEL = r'(?:^|(?<=[\s*•.]))[*•\-\s]*\**\s*(?:{})\s*\**\s*:\s*\**\s*'
+_LABELED_WORK = re.compile(_LABEL.format(r'Work Location|Workplace Type|Work Arrangement|Work Model|Location')
+                           + r'(?P<value>hybrid(?: remote)?|fully remote|remote|in[- ]person|on[- ]?site)\b', re.I | re.M)
+_LABELED_TYPE = re.compile(_LABEL.format(r'Job Types?|Employment Type')
+                           + r'(?P<value>(?:full[- ]?time|part[- ]?time|contract(?:or)?|temporary|temp|internship|seasonal)'
+                           r'(?:\s*,\s*(?:full[- ]?time|part[- ]?time|contract(?:or)?|temporary|temp|internship|seasonal))*)\b', re.I | re.M)
+_LABEL_VALUES = {'hybrid': 'Hybrid', 'hybrid remote': 'Hybrid', 'remote': 'Remote', 'fully remote': 'Remote',
+                 'in person': 'Onsite', 'onsite': 'Onsite', 'on site': 'Onsite',
+                 'full time': 'full_time', 'fulltime': 'full_time', 'part time': 'part_time', 'parttime': 'part_time',
+                 'contract': 'contract', 'contractor': 'contract', 'temporary': 'temporary', 'temp': 'temporary',
+                 'seasonal': 'temporary', 'internship': 'internship'}
+
+
+def labeled_value(pattern, text):
+    """Return an explicit labeled value, or None when absent or self-contradictory."""
+    found = []
+    for match in pattern.finditer(text):
+        for token in re.split(r'\s*,\s*', match.group('value')):
+            value = _LABEL_VALUES.get(re.sub(r'[\s-]+', ' ', token.lower()))
+            if value:
+                found.append((value, match))
+    if len({value for value, _ in found}) != 1:
+        return None
+    value, match = found[0]
+    return {'value': value, 'status': 'explicit', 'source': 'jd_label',
+            'evidence': evidence(text, match.start('value'), match.end('value'), context=True)}
+
+
 def work_mode(text):
+    labeled = labeled_value(_LABELED_WORK, text)
+    if labeled:
+        return labeled
     found = []
     for value, pattern in _WORK_PATTERNS:
         for match in pattern.finditer(text):
@@ -252,6 +285,11 @@ _DESCRIPTION_TYPE_PATTERNS = [('internship', r'\b(?:internship|co-op)\b|\bintern
                 ('contract', r'\b(?:contract|freelance|contractor|fixed[- ]term)\s+(?:role|position|job|employment)\b')]
 def employment_type(text):
     title, _, description = text.partition('\n')
+    labeled = labeled_value(_LABELED_TYPE, description)
+    if labeled:
+        labeled['evidence']['start'] += len(title) + 1
+        labeled['evidence']['end'] += len(title) + 1
+        return labeled
     found = []
     for haystack, candidates, offset in (
         (title, _TITLE_TYPE_PATTERNS, 0),
