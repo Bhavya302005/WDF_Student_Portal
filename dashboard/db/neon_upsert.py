@@ -39,59 +39,63 @@ log = logging.getLogger("neon_upsert")
 # SQL
 # ---------------------------------------------------------------------------
 
-UPSERT_SQL = """
-INSERT INTO public.jobs (
-    id, job_title, company, description,
-    skills_required, skills_preferred,
-    experience_min, experience_max, experience,
-    location, country, work_mode, is_remote,
-    job_type, role_category, status,
-    salary, salary_min, salary_max, salary_currency, salary_period,
-    posted_at, source_board,
-    basic_qualifications, preferred_qualifications, key_responsibilities,
-    extraction, job_url, apply_url
+COLUMNS = (
+    "id", "job_title", "company", "description",
+    "skills_required", "skills_preferred",
+    "experience_min", "experience_max", "experience",
+    "location", "country", "work_mode", "is_remote",
+    "job_type", "role_category", "status",
+    "salary", "salary_min", "salary_max", "salary_currency", "salary_period",
+    "posted_at", "source_board",
+    "basic_qualifications", "preferred_qualifications", "key_responsibilities",
+    "extraction", "job_url", "apply_url",
 )
-VALUES (
-    %(id)s, %(job_title)s, %(company)s, %(description)s,
-    %(skills_required)s, %(skills_preferred)s,
-    %(experience_min)s, %(experience_max)s, %(experience)s,
-    %(location)s, %(country)s, %(work_mode)s, %(is_remote)s,
-    %(job_type)s, %(role_category)s, %(status)s,
-    %(salary)s, %(salary_min)s, %(salary_max)s, %(salary_currency)s, %(salary_period)s,
-    %(posted_at)s, %(source_board)s,
-    %(basic_qualifications)s, %(preferred_qualifications)s, %(key_responsibilities)s,
-    %(extraction)s, %(job_url)s, %(apply_url)s
+
+# Assigning EXCLUDED.<col> writes a fresh TOAST copy even when the text is
+# identical, so a weekly re-upsert used to double the table's storage. Keeping
+# the stored value whenever it is unchanged reuses the existing TOAST data.
+LARGE_COLUMNS = ("description", "basic_qualifications", "preferred_qualifications",
+                 "key_responsibilities", "extraction")
+
+_CONTENT_COLUMNS = [column for column in COLUMNS if column != "id"]
+_CHANGED = ("(" + ", ".join(f"jobs.{c}" for c in _CONTENT_COLUMNS) + ") IS DISTINCT FROM ("
+            + ", ".join(f"EXCLUDED.{c}" for c in _CONTENT_COLUMNS) + ")")
+
+
+def _assignment(column: str) -> str:
+    if column in LARGE_COLUMNS:
+        return (f"{column} = CASE WHEN jobs.{column} IS DISTINCT FROM EXCLUDED.{column} "
+                f"THEN EXCLUDED.{column} ELSE jobs.{column} END")
+    return f"{column} = EXCLUDED.{column}"
+
+
+UPSERT_SQL = (
+    "INSERT INTO public.jobs (" + ", ".join(COLUMNS) + ", last_seen_at)\n"
+    "VALUES (" + ", ".join(f"%({c})s" for c in COLUMNS) + ", now())\n"
+    "ON CONFLICT (id) DO UPDATE SET\n    "
+    + ",\n    ".join(_assignment(c) for c in _CONTENT_COLUMNS)
+    + f",\n    updated_at = CASE WHEN {_CHANGED} THEN now() ELSE jobs.updated_at END"
+    + ",\n    last_seen_at = now();"
 )
-ON CONFLICT (id) DO UPDATE SET
-    job_title              = EXCLUDED.job_title,
-    company                = EXCLUDED.company,
-    description            = EXCLUDED.description,
-    skills_required        = EXCLUDED.skills_required,
-    skills_preferred       = EXCLUDED.skills_preferred,
-    experience_min         = EXCLUDED.experience_min,
-    experience_max         = EXCLUDED.experience_max,
-    experience             = EXCLUDED.experience,
-    location               = EXCLUDED.location,
-    country                = EXCLUDED.country,
-    work_mode              = EXCLUDED.work_mode,
-    is_remote              = EXCLUDED.is_remote,
-    job_type               = EXCLUDED.job_type,
-    role_category          = EXCLUDED.role_category,
-    status                 = EXCLUDED.status,
-    salary                 = EXCLUDED.salary,
-    salary_min             = EXCLUDED.salary_min,
-    salary_max             = EXCLUDED.salary_max,
-    salary_currency        = EXCLUDED.salary_currency,
-    salary_period          = EXCLUDED.salary_period,
-    posted_at              = EXCLUDED.posted_at,
-    source_board           = EXCLUDED.source_board,
-    basic_qualifications   = EXCLUDED.basic_qualifications,
-    preferred_qualifications = EXCLUDED.preferred_qualifications,
-    key_responsibilities   = EXCLUDED.key_responsibilities,
-    extraction             = EXCLUDED.extraction,
-    job_url                = EXCLUDED.job_url,
-    apply_url              = EXCLUDED.apply_url,
-    updated_at             = now();
+
+# Idempotent and metadata-only (no table rewrite) on PostgreSQL 11+.
+MIGRATION_SQL = "ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS last_seen_at timestamptz"
+
+# Soft expiry only: a job that reappears is reactivated by the next upsert.
+EXPIRE_SQL = """
+UPDATE public.jobs SET status = 'expired', updated_at = now()
+WHERE status = 'active'
+  AND coalesce(last_seen_at, updated_at) < now() - make_interval(days => %(days)s)
+"""
+
+# Deleting cascades to user feed rows, so never purge jobs a user saved or applied to.
+PURGE_SQL = """
+DELETE FROM public.jobs j
+WHERE j.status = 'expired'
+  AND j.updated_at <= now() - make_interval(days => %(days)s)
+  AND NOT EXISTS (
+      SELECT 1 FROM public.user_job_recommendations r
+      WHERE r.job_id = j.id AND r.status IN ('saved', 'applied'))
 """
 
 # ---------------------------------------------------------------------------
@@ -260,6 +264,49 @@ def _normalize_is_remote(value: Any) -> bool | None:
     return str(value).lower() in ("true", "1", "yes", "remote")
 
 
+def _words(value: Any) -> str:
+    return re.sub(r"\W+", " ", str(value or "").lower()).strip()
+
+
+def _section(value: Any, description: str | None) -> str | None:
+    """Store a JD section only when the description does not already contain it.
+
+    Sections are normally excerpts of the description and can be re-derived
+    from it; storing them again roughly doubled the table's text volume.
+    """
+    text = _text(value)
+    if text and description and _words(text) in _words(description):
+        return None
+    return text
+
+
+def _slim_extraction(extraction: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Keep extracted values and their provenance, not the evidence snippets.
+
+    Evidence text and source_fields copies are reproducible from the stored
+    description and board fields, and dominate the JSON's size.
+    """
+    if extraction is None:
+        return None
+    pick = lambda item, keys: {k: item[k] for k in keys if isinstance(item, dict) and item.get(k) is not None}
+    value_keys = ("value", "status", "source")
+    slim: dict[str, Any] = {
+        "version": extraction.get("version"),
+        "input_hash": extraction.get("input_hash"),
+        "description_sha256": extraction.get("description_sha256"),
+        "salary_status": extraction.get("salary_status"),
+        "salary_candidates": [pick(c, ("min", "max", "currency", "period", "component", "location", "status", "source"))
+                              for c in extraction.get("salary_candidates") or []],
+        "skills": [pick(s, ("name", "requirement", "source")) for s in extraction.get("skills") or []],
+        "experience": [pick(e, ("min", "max", "requirement")) for e in extraction.get("experience") or []],
+        "education": [pick(e, ("value", "requirement")) for e in extraction.get("education") or []],
+    }
+    for key in ("work_mode", "job_type"):
+        if isinstance(extraction.get(key), dict):
+            slim[key] = pick(extraction[key], value_keys)
+    return {k: v for k, v in slim.items() if v not in (None, [], {})}
+
+
 # ---------------------------------------------------------------------------
 # Core mapper
 # ---------------------------------------------------------------------------
@@ -275,7 +322,8 @@ def map_job(raw: dict) -> dict:
         if canonical != key and job.get(canonical) in (None, ""):
             job[canonical] = val
 
-    extraction = _normalize_json_object(job.get("extraction"))
+    extraction = _slim_extraction(_normalize_json_object(job.get("extraction")))
+    description = _text(job.get("description") or job.get("job_description"))
 
     # Required = explicit requirements plus unqualified mentions, never the
     # skills a JD explicitly marks as preferred.
@@ -289,7 +337,7 @@ def map_job(raw: dict) -> dict:
         "id":                      _stable_id(raw),
         "job_title":               _text(job.get("job_title") or job.get("title")) or "",
         "company":                 _text(job.get("company") or job.get("company_name")),
-        "description":             _text(job.get("description") or job.get("job_description")),
+        "description":             description,
         "skills_required":         Jsonb(required),
         "skills_preferred":        Jsonb(preferred),
         "experience_min":          _parse_float(job.get("experience_min")),
@@ -307,12 +355,13 @@ def map_job(raw: dict) -> dict:
         "salary_max":              _parse_float(job.get("salary_max")),
         "salary_currency":         _text(job.get("salary_currency")),
         "salary_period":           _text(job.get("salary_period")),
-        # Scrape time is only a last resort when no board posting date exists.
-        "posted_at":               _parse_posted_at(job.get("posted_at") or job.get("created_at") or job.get("scraped_at")),
+        # Never substitute scrape time: an unknown posting date stays unknown
+        # instead of making every job look freshly posted.
+        "posted_at":               _parse_posted_at(job.get("posted_at") or job.get("created_at")),
         "source_board":            job.get("source_board") or job.get("scraper_type"),
-        "basic_qualifications":    _text(job.get("basic_qualifications")),
-        "preferred_qualifications": _text(job.get("preferred_qualifications")),
-        "key_responsibilities":    _text(job.get("key_responsibilities")),
+        "basic_qualifications":    _section(job.get("basic_qualifications"), description),
+        "preferred_qualifications": _section(job.get("preferred_qualifications"), description),
+        "key_responsibilities":    _section(job.get("key_responsibilities"), description),
         "extraction":              Jsonb(extraction) if extraction is not None else None,
         "job_url":                 _text(job.get("job_url") or job.get("url") or job.get("link")),
         "apply_url":               _text(job.get("apply_url") or job.get("apply_link")),
@@ -323,14 +372,46 @@ def map_job(raw: dict) -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
-def save_jobs(jobs: list[dict], batch_size: int = 500) -> int:
+def _vacuum(database_url: str) -> None:
+    """Make dead row versions reusable so later batches do not grow the database."""
+    try:
+        with psycopg.connect(database_url, autocommit=True) as conn:
+            conn.execute("VACUUM public.jobs")
+    except Exception as exc:  # maintenance only; never block ingestion on it
+        log.warning(f"  VACUUM skipped: {exc}")
+
+
+def _expire_and_purge(conn, seen_count: int, expire_days: int, purge_days: int | None) -> None:
+    with conn.cursor() as cur:
+        active = cur.execute("SELECT count(*) FROM public.jobs WHERE status = 'active'").fetchone()[0]
+        # A partial run (one source, or a broken scraper) must not expire the rest.
+        if seen_count < 0.5 * active:
+            log.warning(f"Expiry skipped: run saw {seen_count} jobs, under half of {active} active.")
+            return
+        cur.execute(EXPIRE_SQL, {"days": expire_days})
+        log.info(f"Expired {cur.rowcount} jobs not seen for {expire_days} days.")
+        if purge_days is not None:
+            if cur.execute("SELECT to_regclass('public.user_job_recommendations')").fetchone()[0] is None:
+                log.warning("Purge skipped: cannot verify saved/applied jobs are protected.")
+            else:
+                cur.execute(PURGE_SQL, {"days": purge_days})
+                log.info(f"Purged {cur.rowcount} jobs expired more than {purge_days} days ago.")
+    conn.commit()
+
+
+def save_jobs(jobs: list[dict], batch_size: int = 500, *, expire_missing: bool = False,
+              vacuum_every: int = 10_000) -> int:
     """
     Upsert jobs into public.jobs on Neon.
 
     Parameters
     ----------
-    jobs        : list of raw scraper job dicts
-    batch_size  : rows per executemany call (500 is a safe default)
+    jobs           : list of raw scraper job dicts
+    batch_size     : rows per executemany call (500 is a safe default)
+    expire_missing : after a fully successful upsert, mark jobs not seen for
+                     JOB_EXPIRE_DAYS (default 21) as expired. Deleting expired
+                     jobs only happens when JOB_PURGE_EXPIRED_DAYS is set.
+    vacuum_every   : VACUUM after this many written rows to bound bloat.
 
     Returns
     -------
@@ -338,7 +419,8 @@ def save_jobs(jobs: list[dict], batch_size: int = 500) -> int:
 
     Raises
     ------
-    KeyError    – if NEON_DATABASE_URL is not set (intentional; fail loudly)
+    KeyError     – if NEON_DATABASE_URL is not set (intentional; fail loudly)
+    RuntimeError – if any batch failed; successful batches stay committed.
     """
     database_url = os.environ["NEON_DATABASE_URL"]  # fail if missing
 
@@ -356,22 +438,40 @@ def save_jobs(jobs: list[dict], batch_size: int = 500) -> int:
     unique_rows = list(seen.values())
 
     log.info(f"Upserting {len(unique_rows)} unique jobs to Neon public.jobs ...")
-    total = 0
+    total = since_vacuum = 0
+    failures: list[str] = []
 
     with psycopg.connect(database_url) as conn:
+        conn.execute(MIGRATION_SQL)
+        conn.commit()
         with conn.cursor() as cur:
             for i in range(0, len(unique_rows), batch_size):
                 batch = unique_rows[i : i + batch_size]
+                number = i // batch_size + 1
                 try:
                     cur.executemany(UPSERT_SQL, batch)
                     conn.commit()
                     total += len(batch)
-                    log.info(f"  ✓ Batch {i // batch_size + 1}: {len(batch)} rows upserted.")
+                    since_vacuum += len(batch)
+                    log.info(f"  ✓ Batch {number}: {len(batch)} rows upserted.")
                 except Exception as exc:
                     conn.rollback()
-                    log.error(f"  ✗ Batch {i // batch_size + 1} failed: {exc}")
+                    failures.append(f"batch {number}: {exc}")
+                    log.error(f"  ✗ Batch {number} failed: {exc}")
+                if since_vacuum >= vacuum_every:
+                    _vacuum(database_url)
+                    since_vacuum = 0
+        if since_vacuum:
+            _vacuum(database_url)
+        if expire_missing and not failures:
+            purge = os.getenv("JOB_PURGE_EXPIRED_DAYS")
+            _expire_and_purge(conn, len(unique_rows), int(os.getenv("JOB_EXPIRE_DAYS", "21")),
+                              int(purge) if purge else None)
 
     log.info(f"Neon upsert complete. Total: {total} rows.")
+    if failures:
+        raise RuntimeError(f"{len(failures)} of {-(-len(unique_rows) // batch_size)} batches failed "
+                           f"({total}/{len(unique_rows)} rows written). First: {failures[0]}")
     return total
 
 

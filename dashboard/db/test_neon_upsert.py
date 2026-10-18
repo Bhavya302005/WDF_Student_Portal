@@ -33,11 +33,33 @@ class MapJobTests(unittest.TestCase):
         self.assertEqual(_unwrap(row["skills_preferred"]), ["Procurement"])
         self.assertEqual(row["posted_at"].date().isoformat(), "2026-10-09")
 
-    def test_posted_date_falls_back_to_created_then_scraped(self) -> None:
+    def test_posted_date_never_uses_scrape_time(self) -> None:
         created = map_job({"id": "a", "job_title": "Buyer", "scraped_at": "2026-10-18", "created_at": "2026-10-01"})
         self.assertEqual(created["posted_at"].date().isoformat(), "2026-10-01")
         scraped = map_job({"id": "b", "job_title": "Buyer", "scraped_at": "2026-10-18"})
-        self.assertEqual(scraped["posted_at"].date().isoformat(), "2026-10-18")
+        self.assertIsNone(scraped["posted_at"])
+
+    def test_sections_contained_in_description_are_not_stored_twice(self) -> None:
+        row = map_job({"id": "a", "job_title": "Buyer",
+                       "description": "About us.\n\nRequirements:\n* 5 years of SAP\n* Excel",
+                       "basic_qualifications": "5 years of SAP\nExcel",
+                       "preferred_qualifications": "An MBA (not in the description)"})
+        self.assertIsNone(row["basic_qualifications"])
+        self.assertEqual(row["preferred_qualifications"], "An MBA (not in the description)")
+
+    def test_extraction_keeps_values_but_drops_evidence(self) -> None:
+        evidence = {"field": "description", "text": "x" * 500, "start": 0, "end": 500}
+        row = map_job({"id": "a", "job_title": "Buyer", "extraction": {
+            "version": "jd-v4", "source_fields": {"description": "y" * 5000},
+            "skills": [{"name": "SAP", "requirement": "required", "source": "jd", "evidence": evidence}],
+            "work_mode": {"value": "Remote", "status": "explicit", "source": "jd", "evidence": evidence},
+            "salary_candidates": [{"min": 1, "max": 2, "currency": "USD", "period": "year", "evidence": evidence}],
+        }})
+        slim = _unwrap(row["extraction"])
+        self.assertEqual(slim["skills"], [{"name": "SAP", "requirement": "required", "source": "jd"}])
+        self.assertEqual(slim["work_mode"], {"value": "Remote", "status": "explicit", "source": "jd"})
+        self.assertNotIn("source_fields", slim)
+        self.assertNotIn("evidence", slim["salary_candidates"][0])
 
     def test_blank_csv_values_are_stored_as_null(self) -> None:
         row = map_job({"id": "a", "job_title": "Buyer", "basic_qualifications": "", "salary": " ", "salary_min": ""})
