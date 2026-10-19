@@ -70,6 +70,19 @@ class SaveJobsIntegrationTests(unittest.TestCase):
     def table_bytes(self) -> int:
         return self.query("SELECT pg_total_relation_size('public.jobs')")[0][0]
 
+    def test_posted_date_only_moves_back(self) -> None:
+        job = {"id": "gh-1", "job_title": "Buyer", "source_board": "Greenhouse", "description": "x"}
+        self.module.save_jobs([{**job, "posted_at": "2026-09-09T08:00:00+00:00"}], vacuum_every=10**9)
+        # An edit on the board (Greenhouse updated_at) reports a later date: keep the first.
+        self.module.save_jobs([{**job, "posted_at": "2026-09-29T08:00:00+00:00"}], vacuum_every=10**9)
+        self.module.save_jobs([job], vacuum_every=10**9)  # no date this time: keep it
+        posted = self.query("SELECT posted_at::date::text FROM public.jobs WHERE id = 'gh-1'")[0][0]
+        self.assertEqual(posted, "2026-09-09")
+        # An earlier date found later (first_published) does replace it.
+        self.module.save_jobs([{**job, "posted_at": "2026-09-01T08:00:00+00:00"}], vacuum_every=10**9)
+        self.assertEqual(self.query("SELECT posted_at::date::text FROM public.jobs WHERE id = 'gh-1'")[0][0],
+                         "2026-09-01")
+
     def test_unchanged_reupsert_does_not_rewrite_text_or_bump_updated_at(self) -> None:
         jobs = self.jobs(300)
         self.module.save_jobs(jobs, vacuum_every=10**9)

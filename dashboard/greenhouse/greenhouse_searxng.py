@@ -225,8 +225,9 @@ def normalize_api_job(
         "scraper_type": "google",
         "job_type": "full_time",
         "scraped_at": _format_time(datetime.now(timezone.utc).isoformat()),
-        "created_at": _format_time(raw.get("updated_at")),
-        "posted_at": _format_time(raw.get("updated_at")),
+        # first_published is when the job went live; updated_at moves on every edit.
+        "created_at": _format_time(raw.get("first_published") or raw.get("updated_at")),
+        "posted_at": _format_time(raw.get("first_published") or raw.get("updated_at")),
         "google_discovered_at": discovered_at,
         "also_on": [],
     })
