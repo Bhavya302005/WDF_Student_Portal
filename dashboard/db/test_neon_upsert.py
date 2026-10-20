@@ -39,6 +39,17 @@ class MapJobTests(unittest.TestCase):
         scraped = map_job({"id": "b", "job_title": "Buyer", "scraped_at": "2026-10-18"})
         self.assertIsNone(scraped["posted_at"])
 
+    def test_scrape_time_fallbacks_and_future_dates_are_not_posting_dates(self) -> None:
+        # Scrapers write datetime.now() when the board gives no date.
+        fallback = map_job({"id": "a", "job_title": "Buyer", "scraped_at": "2026-10-18T05:00:00+00:00",
+                            "created_at": "2026-10-18T05:00:02+00:00"})
+        self.assertIsNone(fallback["posted_at"])
+        future = map_job({"id": "b", "job_title": "Buyer", "posted_at": "2099-01-01"})
+        self.assertIsNone(future["posted_at"])
+        real = map_job({"id": "c", "job_title": "Buyer", "scraped_at": "2026-10-18T05:00:00+00:00",
+                        "posted_at": "2026-10-11T09:00:00+00:00"})
+        self.assertEqual(real["posted_at"].date().isoformat(), "2026-10-11")
+
     def test_sections_contained_in_description_are_not_stored_twice(self) -> None:
         row = map_job({"id": "a", "job_title": "Buyer",
                        "description": "About us.\n\nRequirements:\n* 5 years of SAP\n* Excel",

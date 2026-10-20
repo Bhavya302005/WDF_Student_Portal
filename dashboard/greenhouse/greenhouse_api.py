@@ -190,7 +190,8 @@ def normalize_job(job: dict[str, Any], company_slug: str) -> dict[str, Any]:
         "scraper_type": "api",
         "job_type": "full_time",
         "scraped_at": format_iso_time(datetime.now(timezone.utc).isoformat()),
-        "created_at": format_iso_time(job.get("updated_at")) or format_iso_time(datetime.now(timezone.utc).isoformat()),
+        # first_published is when the job went live; updated_at moves on every edit.
+        "created_at": format_iso_time(job.get("first_published") or job.get("updated_at")) or format_iso_time(datetime.now(timezone.utc).isoformat()),
         "also_on": []
     })
 

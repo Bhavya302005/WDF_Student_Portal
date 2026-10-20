@@ -27,7 +27,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import psycopg
@@ -63,6 +63,11 @@ _CHANGED = ("(" + ", ".join(f"jobs.{c}" for c in _CONTENT_COLUMNS) + ") IS DISTI
 
 
 def _assignment(column: str) -> str:
+    if column == "posted_at":
+        # A posting date only moves back: boards report their last-edit time
+        # (Greenhouse updated_at), and an edit must not make an old job look new.
+        # LEAST ignores NULL, so a newly found date still fills an empty one.
+        return "posted_at = LEAST(jobs.posted_at, EXCLUDED.posted_at)"
     if column in LARGE_COLUMNS:
         return (f"{column} = CASE WHEN jobs.{column} IS DISTINCT FROM EXCLUDED.{column} "
                 f"THEN EXCLUDED.{column} ELSE jobs.{column} END")
@@ -200,6 +205,29 @@ def _parse_posted_at(value: Any) -> datetime | None:
         return dt
     except (ValueError, TypeError):
         return None
+
+
+# Scrapers that find no date fall back to datetime.now() (Greenhouse, Lever,
+# Ashby, Teamtailor, the Google-based ones), which reads as "posted today".
+# A "posting date" this close to the scrape is that fallback, not a date.
+_SCRAPE_FALLBACK = timedelta(minutes=10)
+
+
+def _posted_at(job: dict[str, Any]) -> datetime | None:
+    """The board's posting date, or None when it is missing, invented or in the future.
+
+    None is honest: readers fall back to jobs.created_at, when we first saw the job.
+    """
+    posted = _parse_posted_at(job.get("posted_at") or job.get("created_at"))
+    if posted is None:
+        return None
+    now = datetime.now(timezone.utc)
+    if posted > now + timedelta(days=1):
+        return None
+    scraped = _parse_posted_at(job.get("scraped_at"))
+    if scraped is not None and abs(posted - scraped) <= _SCRAPE_FALLBACK:
+        return None
+    return posted
 
 
 def _text(value: Any) -> str | None:
@@ -357,7 +385,7 @@ def map_job(raw: dict) -> dict:
         "salary_period":           _text(job.get("salary_period")),
         # Never substitute scrape time: an unknown posting date stays unknown
         # instead of making every job look freshly posted.
-        "posted_at":               _parse_posted_at(job.get("posted_at") or job.get("created_at")),
+        "posted_at":               _posted_at(job),
         "source_board":            job.get("source_board") or job.get("scraper_type"),
         "basic_qualifications":    _section(job.get("basic_qualifications"), description),
         "preferred_qualifications": _section(job.get("preferred_qualifications"), description),
