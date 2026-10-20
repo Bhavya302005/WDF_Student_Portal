@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import re
 
-VERSION = 'jd-v4'
+VERSION = 'jd-v5'
 
 _BOUNDARY = re.compile(r'[;\n]|[.!?](?=\s|$)')
 
@@ -18,6 +18,10 @@ _BOUNDARY = re.compile(r'[;\n]|[.!?](?=\s|$)')
 def description_text(value):
     """Keep paragraph/list boundaries, which carry requirement and pay context."""
     text = str(value or '')
+    # Greenhouse sends entity-escaped HTML ("&lt;p&gt;"): unescape first, or the
+    # tags survive as literal text and no paragraph/list boundaries are kept.
+    if re.search(r'&lt;\s*/?\s*(?:p|div|li|ul|br|h[1-6]|span|strong)\b', text, re.I):
+        text = unescape(text)
     text = re.sub(r'<(script|style)\b[^>]*>.*?</\1>', '', text, flags=re.I | re.S)
     text = re.sub(r'<\s*(?:br\s*/?|/p|/div|/li|/h[1-6]|/tr)\s*>', '\n', text, flags=re.I)
     text = re.sub(r'<[^>]+>', ' ', text)
@@ -65,9 +69,9 @@ _MONEY = re.compile(
 _PAY = re.compile(r'\b(?:salary|salaries|pay|paid|compensation|wage|wages|remuneration|earnings|OTE|on[- ]target earnings|bonus|commission|stipend)\b', re.I)
 _MONEY_MARKER = re.compile(rf'{_CURRENCY}|{_UNIT}', re.I)
 _PERIODS = {
-    'hour': r'(?:/\s*h(?:r|our)?\b|\b(?:per|an?|each)\s+(?:hour|hr)\b|\bhourly\b)',
-    'year': r'(?:/\s*(?:yr|year)\b|\b(?:per|an?|each)\s+(?:year|yr|annum)\b|\bannual(?:ly)?\b|\bLPA\b)',
-    'month': r'(?:/\s*(?:mo|month)\b|\b(?:per|an?|each)\s+(?:month|mo)\b|\bmonthly\b)',
+    'hour': r'(?:/\s*h(?:r|our)?\b|\b(?:per|an?|each)\s+(?:hour|hr)\b|\bhourly\b|\b(?:per uur|pro Stunde|de l\'heure|por hora)\b|\bstündlich)',
+    'year': r'(?:/\s*(?:yr|year)\b|\b(?:per|an?|each)\s+(?:year|yr|annum)\b|\bannual(?:ly)?\b|\bLPA\b|\b(?:per jaar|pro Jahr|par an|al año|annuel(?:le)?|brut annuel)\b|\bjährlich)',
+    'month': r'(?:/\s*(?:mo|month)\b|\b(?:per|an?|each)\s+(?:month|mo)\b|\bmonthly\b|\b(?:per maand|pro Monat|par mois|al mes|mensuel(?:le)?|monatlich)\b)',
     'week': r'(?:/\s*(?:wk|week)\b|\b(?:per|an?|each)\s+week\b|\bweekly\b)',
     'day': r'(?:/\s*day\b|\b(?:per|an?|each)\s+day\b|\bdaily\b)',
 }
@@ -110,6 +114,9 @@ def salary_candidates(text, field='description', source='jd'):
         context = snippet['text']
         before = text[max(snippet['start'], match.start() - 90):match.start()]
         after = text[match.end():min(snippet['end'], match.end() + 55)]
+        # "401k" / "403(b)" are retirement plans, not pay.
+        if re.match(r'\s*\(?\s*[kb]\s*\)?', text[match.end('n1'):match.end('n1') + 4], re.I) and g['n1'] in ('401', '403', '457'):
+            continue
         money_signal = g['c1'] or g['c2'] or g['suffix'] or g['u1'] or g['u2']
         # All bare numeric ranges require pay context, not merely plausible size.
         if not money_signal and not _PAY.search(before):
@@ -164,8 +171,37 @@ def salary_candidates(text, field='description', source='jd'):
         results.append({'min': low, 'max': high, 'currency': currency, 'period': period,
                         'component': component, 'location': region_name,
                         'text': match.group().strip(), 'evidence': snippet, 'source': source,
-                        'status': 'explicit' if currency and period else 'needs_context'})
-    return results
+                        'status': 'explicit' if currency and period else 'needs_context',
+                        '_span': (match.start(), match.end())})
+    return [{k: v for k, v in item.items() if k != '_span'} for item in _merge_between(text, results)]
+
+
+# "between €2.650 and €2.800" is one range, not two salaries.
+_BETWEEN = re.compile(r'\b(?:between|tussen|zwischen|entre|tra|fra)\s*$', re.I)
+_AND = re.compile(r'^\s*(?:and|en|und|et|y|e|à|a|-|–|—)\s*$', re.I)
+
+
+def _merge_between(text, results):
+    merged, skip = [], set()
+    for index, item in enumerate(results):
+        if index in skip:
+            continue
+        following = results[index + 1] if index + 1 < len(results) else None
+        if (following and item['min'] == item['max'] and following['min'] == following['max']
+                and item['min'] is not None and following['min'] is not None and item['min'] <= following['min']
+                and _BETWEEN.search(text[max(0, item['_span'][0] - 20):item['_span'][0]])
+                and _AND.match(text[item['_span'][1]:following['_span'][0]])
+                and (item['currency'] or following['currency']) in (item['currency'] or following['currency'], None)):
+            combined = dict(item, max=following['min'], currency=item['currency'] or following['currency'],
+                            period=item['period'] or following['period'],
+                            text=text[item['_span'][0]:following['_span'][1]],
+                            _span=(item['_span'][0], following['_span'][1]))
+            combined['status'] = 'explicit' if combined['currency'] and combined['period'] else 'needs_context'
+            merged.append(combined)
+            skip.add(index + 1)
+        else:
+            merged.append(item)
+    return merged
 
 
 @lru_cache(maxsize=4)
@@ -216,33 +252,43 @@ def skill_candidates(text, field='description', source='jd'):
 
 
 _WORK_PATTERNS = [
-    ('Hybrid', re.compile(r'\bhybrid\b|\b(?:one|two|three|four|five|\d+)\s+(?:remote|office|on[- ]?site)\s+days?\s+(?:a|per|each)\s+week\b|\b(?:one|two|three|four|five|\d+)\s+days?\s+(?:a|per)\s+week\s+(?:in|at)\s+(?:the\s+)?office\b|\b(?:one|two|three|four|five|\d+)\s+days?\s+(?:in[- ]office|on[- ]?site).*?(?:one|two|three|four|five|\d+)\s+days?\s+remote(?:ly)?\b', re.I)),
+    # "hybrid cloud/vehicle/app" is technology, not a work arrangement.
+    ('Hybrid', re.compile(r'\bhybrid\b(?![- ]?(?:cloud|vehicles?|cars?|apps?|applications?|mobile|electric|energy|engines?|seeds?|infrastructure|environments?|it\b|integration|architectures?|solutions?|systems?|workflows?|integrated|approach(?:es)?|models? of care|funds?|securities|instruments?|methodolog\w*|tech\w*|storage|networks?|events?|meetings?|interviews?|learning|classes|courses?))|\b(?:one|two|three|four|five|\d+)\s+(?:remote|office|on[- ]?site)\s+days?\s+(?:a|per|each)\s+week\b|\b(?:one|two|three|four|five|\d+)(?:\s*(?:-|to|or)\s*(?:one|two|three|four|five|\d+))?\s+days?\s+(?:a|per|each|every)\s+week\s+(?:in|at|from)\s+(?:the\s+|our\s+|an?\s+)?(?:[\w&.\'’-]+\s+){0,3}(?:office|studio|hq|headquarters|campus)\b|\bin[- ](?:the[- ])?office\s+(?:one|two|three|four|five|\d+)(?:\s*(?:-|to)\s*\d+)?\s+days\b|\b(?:one|two|three|four|five|\d+)\s+days?\s+(?:in[- ]office|on[- ]?site).*?(?:one|two|three|four|five|\d+)\s+days?\s+remote(?:ly)?\b', re.I)),
     ('Onsite', re.compile(r'\b(?:on[- ]?site|in[- ]office|in[- ]person)\s+(?:role|position|job|work|schedule)\b|\b(?:work|performed|based|required to work)\s+(?:fully\s+)?(?:on[- ]?site|in[- ]office|in[- ]person)\b|\breport to (?:the )?office\b|\b(?:no|not|non)[ -]+remote\b', re.I)),
-    ('Remote', re.compile(r'\b(?:fully|100%)\s+remote\b|\bremote[- ](?:first|only|friendly)\b|\bremote\s+(?:role|position|job|work|opportunity|within)\b|\b(?:work from home|WFH)\b', re.I)),
+    ('Remote', re.compile(r'\b(?:fully|100%)\s+remote\b|\bremote[- ](?:first|only|friendly|eligible)\b|\bremote\s+(?:role|position|job|work|opportunity|within)\b|\b(?:work from home|WFH)\b|\bremote\s+(?:in|across|from)\s+(?:the\s+)?(?:US|U\.S\.|USA|United States|UK|Canada|Europe|EMEA|LATAM|India|country)\b|\b(?:US|U\.S\.|USA)[- ]based\s+remote\b|\b(?:this|the)\s+(?:position|role|job|opportunity)\s+(?:is|can be)\s+(?:fully\s+|100%\s+)?(?:remote|performed remotely)\b|\bwork remotely from (?:anywhere|home)\b', re.I)),
 ]
 
 
 # Board-published labels (e.g. Indeed's "Job Type: Full-time" / "Work Location:
 # In person" footer). Markdown bullets/bold around the label are tolerated.
 _LABEL = r'(?:^|(?<=[\s*•.]))[*•\-\s]*\**\s*(?:{})\s*\**\s*:\s*\**\s*'
-_LABELED_WORK = re.compile(_LABEL.format(r'Work Location|Workplace Type|Work Arrangement|Work Model|Location')
+_LABELED_WORK = re.compile(_LABEL.format(r'Work Location|Workplace Type|Work Arrangement|Work Model|Workplace Model|Workplace|Work Type|Location Type|Work Setting|Work Environment|Remote Status|Job Location Type|Work Mode|Working Model|Location')
                            + r'(?P<value>hybrid(?: remote)?|fully remote|remote|in[- ]person|on[- ]?site)\b', re.I | re.M)
-_LABELED_TYPE = re.compile(_LABEL.format(r'Job Types?|Employment Type')
-                           + r'(?P<value>(?:full[- ]?time|part[- ]?time|contract(?:or)?|temporary|temp|internship|seasonal)'
-                           r'(?:\s*,\s*(?:full[- ]?time|part[- ]?time|contract(?:or)?|temporary|temp|internship|seasonal))*)\b', re.I | re.M)
+_TYPE_VALUE = (r'(?:(?:regular|permanent)\s+)?(?:full[- ]?time|part[- ]?time)(?:\s*[-,]?\s*(?:regular|permanent))?'
+               r'|contract(?:or)?|temporary|temp|internship|seasonal|CDI|CDD|Vollzeit|Teilzeit|alternance|stage')
+_LABELED_TYPE = re.compile(_LABEL.format(r'Job Types?|Employment Type|Type of Employment|Employment Status|Position Type|Job Status|'
+                                         r'Schedule|Work Schedule|Contract Type|Type de contrat|Vertragsart|Anstellungsart|Beschäftigungsart')
+                           + rf'(?P<value>(?:{_TYPE_VALUE})(?:\s*,\s*(?:{_TYPE_VALUE}))*)\b', re.I | re.M)
 _LABEL_VALUES = {'hybrid': 'Hybrid', 'hybrid remote': 'Hybrid', 'remote': 'Remote', 'fully remote': 'Remote',
                  'in person': 'Onsite', 'onsite': 'Onsite', 'on site': 'Onsite',
                  'full time': 'full_time', 'fulltime': 'full_time', 'part time': 'part_time', 'parttime': 'part_time',
                  'contract': 'contract', 'contractor': 'contract', 'temporary': 'temporary', 'temp': 'temporary',
-                 'seasonal': 'temporary', 'internship': 'internship'}
+                 'seasonal': 'temporary', 'internship': 'internship',
+                 'cdi': 'full_time', 'cdd': 'contract', 'vollzeit': 'full_time', 'teilzeit': 'part_time',
+                 'alternance': 'internship', 'stage': 'internship'}
 
 
 def labeled_value(pattern, text):
     """Return an explicit labeled value, or None when absent or self-contradictory."""
     found = []
     for match in pattern.finditer(text):
+        # "Full-time or Part-time" / "Full-time/Part-time" offers both: not a single value.
+        if re.match(r'\s*(?:or|/|&|and)\s*\w', text[match.end('value'):match.end('value') + 12], re.I):
+            return None
         for token in re.split(r'\s*,\s*', match.group('value')):
-            value = _LABEL_VALUES.get(re.sub(r'[\s-]+', ' ', token.lower()))
+            key = re.sub(r'[\s-]+', ' ', token.lower())
+            key = re.sub(r'^(?:regular|permanent) |,? ?(?:regular|permanent)$', '', key).strip()
+            value = _LABEL_VALUES.get(key)
             if value:
                 found.append((value, match))
     if len({value for value, _ in found}) != 1:
@@ -275,14 +321,15 @@ def work_mode(text):
     return {'value': None, 'status': 'not_stated', 'source': None, 'evidence': None}
 
 
-_TITLE_TYPE_PATTERNS = [('internship', r'\b(?:internship|intern|co-op)\b'), ('part_time', r'\bpart[- ]time\b'),
-                ('full_time', r'\bfull[- ]time\b'), ('temporary', r'\b(?:temporary|seasonal)\s+(?:role|position|job|employment)\b'),
+_TITLE_TYPE_PATTERNS = [('internship', r'\b(?:internship|intern|co-op|stagiaire|Praktikum|Werkstudent(?:in)?|alternance|alternant(?:e)?)\b|\bstage\b(?=.*(?:\((?:H/F|F/H)\)|\bmois\b))|(?<=\(H/F\) - )stage\b|(?<=\(F/H\) - )stage\b'), ('part_time', r'\bpart[- ]time\b|\b(?:Teilzeit|temps partiel|media jornada|medio tiempo)\b'),
+                ('full_time', r'\bfull[- ]time\b|\b(?:Vollzeit|temps plein|tiempo completo|jornada completa)\b'), ('temporary', r'\b(?:temporary|seasonal)\s+(?:role|position|job|employment)\b'),
                 ('contract', r'\b(?:contract|freelance)\s+(?:role|position|job|employment)\b|\b(?:fixed[- ]term|contractor)\b')]
 _DESCRIPTION_TYPE_PATTERNS = [('internship', r'\b(?:internship|co-op)\b|\bintern\s+(?:role|position|job|program)\b'),
-                ('part_time', r'\bpart[- ]time\s+(?:role|position|job|employment|schedule|opportunity)\b|\b(?:role|position|job|employment)\s+(?:is\s+)?part[- ]time\b'),
-                ('full_time', r'\bfull[- ]time\s+(?:role|position|job|employment|schedule|opportunity)\b|\b(?:role|position|job|employment)\s+(?:is\s+)?full[- ]time\b'),
+                ('part_time', r'\bpart[- ]time\s*,?\s*(?:(?:on[- ]?site|remote|hybrid|permanent|regular|hourly)\s*,?\s*)*(?:role|position|job|employment|schedule|opportunity|employee)\b|\b(?:role|position|job|employment)\s+(?:is\s+)?(?:a\s+)?part[- ]time\b'),
+                ('full_time', r'\bfull[- ]time\s*,?\s*(?:(?:on[- ]?site|remote|hybrid|permanent|regular|salaried|exempt)\s*,?\s*)*(?:role|position|job|opportunity|employee|hire)\b|\b(?:role|position|job|employment)\s+(?:is\s+)?(?:a\s+)?full[- ]time\b|(?:\b(?:en|contrat)\s+|\((?:H/F|F/H)\)[^\n]{0,40}?)\bCDI\b'),
                 ('temporary', r'\b(?:temporary|seasonal)\s+(?:role|position|job|employment)\b'),
-                ('contract', r'\b(?:contract|freelance|contractor|fixed[- ]term)\s+(?:role|position|job|employment)\b')]
+                ('contract', r'\b(?:contract|freelance|contractor|fixed[- ]term)\s+(?:role|position|job|employment)\b|(?:\b(?:en|contrat)\s+|\((?:H/F|F/H)\)[^\n]{0,40}?)\bCDD\b|\bbefristet\b'),
+                ('internship', r'\b(?:stagiaire|Praktikum|Praktikant(?:in)?|Werkstudent(?:in)?|alternance|alternant(?:e)?|tirocinio)\b')]
 def employment_type(text):
     title, _, description = text.partition('\n')
     labeled = labeled_value(_LABELED_TYPE, description)
@@ -308,80 +355,145 @@ def employment_type(text):
     return {'value': None, 'status': 'ambiguous' if found else 'not_stated', 'source': 'jd' if found else None, 'evidence': None, 'candidates': found}
 
 
+_NUMBER_WORDS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8,
+                 'nine': 9, 'ten': 10, 'eleven': 11, 'twelve': 12, 'fifteen': 15, 'twenty': 20}
+_YEARS_NUMBER = r'(?:\d+(?:\.\d+)?|' + '|'.join(_NUMBER_WORDS) + r')'
+# "five (5) years", "5+ years", "5-7 years", "5 or more years", "five years’"
+_YEARS = (rf'(?P<low>{_YEARS_NUMBER})\s*(?:\(\s*\d+\s*\)\s*)?(?:(?:[-–—]|to)\s*(?P<high>{_YEARS_NUMBER})\s*)?'
+          r'(?P<plus>\+|\s*plus\b|\s*or more\b)?\s*(?:years?|yrs?)[\'’]?')
+# Ages and company history are not experience requirements.
+_NOT_EXPERIENCE = re.compile(r'\s*(?:of\s+age\b|old\b|or older\b|of\s+service\b|in business\b|of (?:history|operation)\b|warranty\b)', re.I)
+_EXPERIENCE_PATTERNS = [
+    # "5+ years of SAP experience", "3 years' experience", "2 years working with"
+    re.compile(rf'\b{_YEARS}\s+(?:(?:of\s+)?(?:[\w+#.&/-]+\s+){{0,5}}experience\b|(?:working|work)\s+(?:with|in|on)\b'
+               rf'|in\s+(?:[\w+#.-]+\s*){{1,5}}(?=[,.;\n]|$))', re.I),
+    # "10+ years of semiconductor sourcing, ..." (the plus sign makes "of <field>" a requirement)
+    re.compile(rf'\b(?P<low>{_YEARS_NUMBER})\s*(?P<plus>\+|\s*plus\b|\s*or more\b)\s*(?:years?|yrs?)[\'’]?\s+of\s+'
+               r'(?!age\b)(?:[\w+#.&/-]+\s*){1,6}(?=[,.;\n]|$)', re.I),
+    # "minimum of 6 years’ ...", "at least five years in ..."
+    re.compile(rf'\b(?:minimum(?: of)?|at least|requires?|required|must have|with|having|bring|possess)\s+{_YEARS}\s+'
+               r'(?:of\s+|in\s+)?(?!age\b)(?:[\w+#.&/-]+\s*){1,6}(?=[,.;\n]|$)', re.I),
+]
+
+
+def _years_value(token):
+    if token is None:
+        return None
+    token = token.lower()
+    return float(_NUMBER_WORDS[token]) if token in _NUMBER_WORDS else float(token)
+
+
 def experience_candidates(text):
-    pattern = re.compile(r'\b(?P<low>\d+(?:\.\d+)?)\s*(?:(?:[-–—]|to)\s*(?P<high>\d+(?:\.\d+)?)\s*)?(?P<plus>\+)?\s*(?:years?|yrs?)\s+(?:(?:of\s+)?(?:[\w+#.-]+\s+){0,5}experience\b|(?:working|work)\s+(?:with|in|on)\b|in\s+(?:[\w+#.-]+\s*){1,5}(?=[,.;\n]|$))', re.I)
-    out = []
-    for match in pattern.finditer(text):
-        low = float(match['low'])
-        if low > 60:
-            continue
-        high = float(match['high']) if match['high'] else None
-        if high is not None and (high < low or high > 60):
-            continue
-        phrase = match.group()
-        prefix = text[max(0, match.start()-80):match.start()]
-        if not re.search(r'\b(?:experience|working|work)\b', phrase, re.I) and not match['plus'] \
-                and not re.search(r'\b(?:minimum(?: of)?|at least|requires?|required|must|have|bring)\s*$', prefix, re.I):
-            continue
-        out.append({'min': low, 'max': high, 'requirement': requirement(text, match.start(), match.end()),
-                    'source': 'jd', 'status': 'explicit', 'evidence': evidence(text, match.start(), match.end(), context=True)})
-    qualified = re.compile(r'\b(?:minimum(?: of)?|at least|requires?|required|must have)\s+(?P<low>\d+(?:\.\d+)?)\s*(?P<plus>\+)?\s*(?:years?|yrs?)\s+of\s+(?!age\b)(?P<subject>(?:[\w+#.-]+\s*){1,6})(?=[,.;\n]|$)', re.I)
-    for match in qualified.finditer(text):
-        low = float(match['low'])
-        if low > 60 or any(item['evidence']['start'] == match.start() for item in out):
-            continue
-        out.append({'min': low, 'max': None, 'requirement': requirement(text, match.start(), match.end()),
-                    'source': 'jd', 'status': 'explicit', 'evidence': evidence(text, match.start(), match.end(), context=True)})
+    out, seen = [], set()
+    for pattern in _EXPERIENCE_PATTERNS:
+        for match in pattern.finditer(text):
+            unit = re.search(r'(?:years?|yrs?)[\'’]?', match.group(), re.I)
+            if unit and _NOT_EXPERIENCE.match(match.group(), unit.end()):
+                continue
+            low, high = _years_value(match['low']), _years_value(match.groupdict().get('high'))
+            if low is None or low > 40 or (high is not None and (high < low or high > 40)):
+                continue
+            start = match.start('low')
+            if any(abs(start - other) < 3 for other in seen):
+                continue
+            seen.add(start)
+            out.append({'min': low, 'max': high, 'requirement': requirement(text, match.start(), match.end()),
+                        'source': 'jd', 'status': 'explicit', 'evidence': evidence(text, match.start(), match.end(), context=True)})
     return out
 
 
-_SECTION_HEADERS = [
-    ('preferred_qualifications', re.compile(
-        r'(?im)^\s*(?:preferred|desired|nice[- ]to[- ]have|bonus|additional)\s+'
-        r'(?:qualifications?|requirements?|skills?|experience)(?:\s+and\s+skills?)?\s*:?[ \t]*$')),
-    ('key_responsibilities', re.compile(
-        r'(?im)^\s*(?:key\s+)?(?:responsibilities|duties|what\s+you(?:\'|’)?ll\s+do|'
-        r'what\s+you\s+will\s+do|your\s+role|the\s+role|role\s+responsibilities)\s*:?[ \t]*$')),
-    ('basic_qualifications', re.compile(
-        r'(?im)^\s*(?:(?:required|minimum|basic|essential|mandatory|must[- ]have)\s+)?'
-        r'(?:qualifications?|requirements?|skills?)(?:\s+and\s+experience)?\s*:?[ \t]*$|'
-        r'^\s*(?:what\s+you\s+bring|what\s+we(?:\'|’)?re\s+looking\s+for|who\s+you\s+are)\s*:?[ \t]*$')),
+_APOS = r"(?:'|’)?"
+_SECTION_VOCAB = {
+    'preferred_qualifications': [
+        r'(?:preferred|desired|desirable|additional|bonus|ideal)\s+(?:qualifications?|requirements?|skills?|experience)(?:\s+and\s+skills?)?',
+        r'nice[- ]to[- ]haves?', r'bonus(?: points)?(?: if you have)?', rf'(?:it{_APOS}s )?a plus(?: if you have)?', r'pluses',
+        rf'while not required,? (?:it{_APOS}s )?(?:an? )?(?:added )?plus if you (?:also )?have', r'extra credit', r'good to have',
+    ],
+    'key_responsibilities': [
+        r'(?:key |main |primary |core |essential )?(?:responsibilities|duties)(?:\s+(?:and|&)\s+responsibilities)?',
+        rf'what you{_APOS}ll (?:do|be doing)(?: at [\w .&-]{{1,30}})?', r'what you will (?:do|be doing)', r'(?:the|your) role',
+        r'role responsibilities', rf'(?:the )?impact you{_APOS}ll have', r'(?:the )?impact you will (?:have|make)', r'your impact',
+        r'a typical day', r'day[- ]to[- ]day', r'in this role,? you will', r'job duties',
+        r'essential (?:duties|functions)(?: and responsibilities)?', r'vos missions', r'ihre aufgaben', r'deine aufgaben',
+        r'responsabilidades',
+    ],
+    'basic_qualifications': [
+        r'(?:basic|minimum|required|essential|key|core|mandatory|must[- ]have)\s+(?:qualifications?|requirements?|skills?|experience)',
+        r'qualifications?', r'requirements?', r'job requirements',
+        r'(?:skills|experience|education)\s*(?:&|and)\s*(?:qualifications?|experience|skills|education|requirements?|abilities)',
+        rf'what you{_APOS}ll need', r'what you need(?: to succeed)?', rf'what we{_APOS}re looking for', r'what we look for',
+        r'who you are', r'about you', r'you have', r'you bring', r'what you bring', rf'what you{_APOS}ll bring',
+        r'your (?:expertise|experience|background|skills|profile|qualifications)(?:\s*(?:&|and)\s*(?:experience|expertise|skills))?',
+        r'(?:the\s+)?ideal candidate(?: will have)?', r'must[- ]haves?', rf'we{_APOS}d love to hear from you if you have',
+        r'you might be a (?:good |great )?fit if(?: you have)?', r'knowledge,? skills,? (?:and|&) abilities', r'competencies',
+        r'votre profil', r'profil recherch[ée]', r'votre expertise', r'ihr profil', r'das bringst du mit', r'requisitos',
+        r'requisiti',
+    ],
+}
+# Headings that end a section without starting a field (benefits, company, legal).
+_STOP_HEADERS = [
+    r'benefits?(?: (?:and|&) perks)?', r'perks(?: (?:and|&) benefits)?', r'what we offer', rf'why (?:join|work)[\w .&{_APOS}-]{{0,40}}',
+    r'compensation(?: (?:and|&) benefits)?', r'pay(?: range| transparency)?[\w .&-]{0,40}', r'(?:annual )?(?:base )?salary[\w .&-]{0,40}',
+    r'about (?:us|the company|the team|the role|[\w .&-]{1,30})', r'who we are',
+    r'our (?:company|mission|values|culture|story|commitment[\w .&-]{0,60})',
+    r'equal (?:employment )?opportunity[\w .&-]{0,60}', r'eeo[\w .&-]{0,40}', r'accommodations?[\w .&-]{0,60}',
+    rf'how we{_APOS}ll take care of you', r'(?:your )?location', r'(?:the )?community you will join', r'diversity[\w .&-]{0,40}',
+    r'inclusion[\w .&-]{0,40}', r'privacy[\w .&-]{0,40}', r'how to apply', r'next steps', r'(?:the )?interview process',
+    r'life at [\w .&-]{1,30}', r'disclaimer[\w .&-]{0,40}', r'additional information', r'other information',
 ]
 
-_INLINE_SECTION_HEADER = re.compile(
-    r"\b(?P<header>"
-    r"Basic Qualifications|BASIC QUALIFICATIONS|Required Qualifications|REQUIRED QUALIFICATIONS|"
-    r"Minimum Qualifications|MINIMUM QUALIFICATIONS|Preferred Qualifications|PREFERRED QUALIFICATIONS|"
-    r"Qualifications Required|QUALIFICATIONS REQUIRED|Skills/Qualifications|SKILLS/QUALIFICATIONS|"
-    r"Key Responsibilities|KEY RESPONSIBILITIES|Responsibilities|RESPONSIBILITIES|"
-    r"Essential Duties(?: And Responsibilities)?|ESSENTIAL DUTIES(?: AND RESPONSIBILITIES)?|"
-    r"What You(?:'|’)?ll Do|WHAT YOU(?:'|’)?LL DO"
-    r")\s*:?"
-)
+
+def _heading_regex(phrases, inline):
+    body = '|'.join(phrases)
+    if inline:
+        # Flattened text: a known heading followed by a colon.
+        return re.compile(rf'(?:^|(?<=[.!?*\n])\s*|(?<=\s))\**\s*(?P<h>{body})\s*\**\s*[:：]', re.I)
+    return re.compile(rf'(?im)^[ \t]*(?:[#>*•\-]+[ \t]*)?\**[ \t]*(?P<h>{body})[ \t]*\**[ \t]*[:：]?[ \t]*\**[ \t]*$')
+
+
+_FIELD_HEADINGS = {field: (_heading_regex(p, False), _heading_regex(p, True)) for field, p in _SECTION_VOCAB.items()}
+_STOP_HEADINGS = (_heading_regex(_STOP_HEADERS, False), _heading_regex(_STOP_HEADERS, True))
+# Any short line ending in a colon is a heading too ("Physical Requirements:" ends "Qualifications").
+_GENERIC_HEADING = re.compile(r'(?m)^[ \t]*\**[ \t]*[A-Z][^\n.!?]{2,60}:[ \t]*\**[ \t]*$')
+_PREFERRED_LINE = re.compile(r'\b(?:preferred|a plus|nice[- ]to[- ]have|bonus|desirable|ideally|advantageous|an advantage)\b', re.I)
+_QUALIFICATION_WORDS = re.compile(r'\b(?:experience|degree|knowledge|familiar(?:ity)?|skills?|certifi\w+|proficien\w+|background|'
+                                  r'understanding|license|MBA|bachelor|master)\b', re.I)
 
 
 def section_fields(text):
-    """Extract explicitly headed qualification/responsibility blocks."""
-    headings = []
-    for field, pattern in _SECTION_HEADERS:
-        headings.extend((match.start(), match.end(), field) for match in pattern.finditer(text))
-    for match in _INLINE_SECTION_HEADER.finditer(text):
-        header = match.group('header').lower()
-        if 'preferred' in header:
-            field = 'preferred_qualifications'
-        elif 'responsibilit' in header or 'duties' in header or "you'll do" in header or 'you’ll do' in header:
-            field = 'key_responsibilities'
-        else:
-            field = 'basic_qualifications'
-        headings.append((match.start(), match.end(), field))
-    headings = list(dict.fromkeys(headings))
-    headings.sort()
+    """Headed qualification/responsibility blocks; each runs until the next heading of any kind."""
+    lined = text.count('\n') >= 3
+    starts, stops = [], []
+    for field, (line_pattern, inline_pattern) in _FIELD_HEADINGS.items():
+        for pattern in ((line_pattern, inline_pattern) if lined else (inline_pattern,)):
+            starts.extend((m.start('h'), m.end(), field) for m in pattern.finditer(text))
+    for pattern in (_STOP_HEADINGS if lined else _STOP_HEADINGS[1:]):
+        stops.extend(m.start('h') for m in pattern.finditer(text))
+    if lined:
+        stops.extend(m.start() for m in _GENERIC_HEADING.finditer(text))
+    # Longest heading first at each position; a heading inside another one ("Qualifications"
+    # within "Preferred Qualifications:") is part of it, not a heading of its own.
+    unique, covered_until = [], -1
+    for begin, content_start, field in sorted(starts, key=lambda item: (item[0], -item[1])):
+        if begin >= covered_until:
+            unique.append((begin, content_start, field))
+            covered_until = content_start
+    boundaries = sorted({begin for begin, _, _ in unique} | set(stops))
     fields = {}
-    for index, (_, content_start, field) in enumerate(headings):
-        content_end = headings[index + 1][0] if index + 1 < len(headings) else len(text)
-        value = text[content_start:content_end].strip(' \t\r\n:-')[:6000]
-        if value and field not in fields:
+    for begin, content_start, field in unique:
+        following = [b for b in boundaries if b > begin + 1]
+        content_end = following[0] if following else len(text)
+        value = text[content_start:content_end].strip(' \t\r\n:-*')[:6000]
+        if len(value) >= 3 and re.search(r'\w{2}', value) and field not in fields:
             fields[field] = value
+    if 'preferred_qualifications' not in fields:
+        # No preferred heading: lines saying "... is a plus" / "... preferred" are the preferred qualifications.
+        pool = fields.get('basic_qualifications') or text
+        lines = [line.strip(' -*•') for line in re.split(r'\n|(?<=[.;])\s+', pool)]
+        preferred = [line for line in lines if 10 <= len(line) <= 400 and _PREFERRED_LINE.search(line)
+                     and _QUALIFICATION_WORDS.search(line)]
+        if preferred:
+            fields['preferred_qualifications'] = '\n'.join(dict.fromkeys(preferred))[:2000]
     return fields
 
 
@@ -451,7 +563,47 @@ def format_salary(low, high, currency=None, period=None):
     return f'{amount_text} per {period}' if period else amount_text
 
 
-def _rules(text, title, source):
+# "Remote Sensing Scientist" / "Remote Patient Monitoring" name the work, not where it happens.
+_PLACE_MODE = [('Remote', re.compile(r'\bremote\b(?![- ]?(?:sensing|control|patient|monitoring|operations?|operator|pilot|'
+                                     r'access|support center|site manager|surgery|camera))', re.I)), ('Hybrid', re.compile(r'\bhybrid\b', re.I)),
+               ('Onsite', re.compile(r'\b(?:on[- ]?site|in[- ]office)\b', re.I))]
+_WORK_MODES = ('Remote', 'Hybrid', 'Onsite')
+_JOB_TYPES = ('full_time', 'part_time', 'contract', 'temporary', 'internship')
+
+
+def _place_mode(title, location):
+    """Board location/title such as "Remote - US" or "Analyst (Hybrid)"; None when absent or mixed."""
+    for field, value in (('location', location), ('title', title)):
+        found = {mode for mode, pattern in _PLACE_MODE if pattern.search(value or '')}
+        if len(found) == 1:
+            return {'value': found.pop(), 'status': 'explicit', 'source': 'board_' + field,
+                    'evidence': {'field': field, 'value': value}}
+    return None
+
+
+def _canonical(key, val):
+    """A board's own work mode / job type value in this module's vocabulary, or None."""
+    mapping = {'remote': 'Remote', 'hybrid': 'Hybrid', 'on_site': 'Onsite', 'onsite': 'Onsite', 'on site': 'Onsite',
+               'in person': 'Onsite',
+               'full-time': 'full_time', 'full time': 'full_time', 'part-time': 'part_time', 'part time': 'part_time',
+               'full_time': 'full_time', 'part_time': 'part_time', 'contract': 'contract', 'temporary': 'temporary',
+               'internship': 'internship'}
+    raw = str(val or '').lower().strip()
+    normalized = re.sub(r'[_-]+', ' ', raw).strip()
+    canonical = mapping.get(raw) or mapping.get(normalized)
+    if key == 'work_mode':
+        return canonical if canonical in _WORK_MODES else None
+    if canonical in _JOB_TYPES:
+        return canonical
+    if re.search(r'\bfull\s*time\b', normalized): return 'full_time'
+    if re.search(r'\bpart\s*time\b', normalized): return 'part_time'
+    if re.search(r'\b(?:internship|intern|co op)\b', normalized): return 'internship'
+    if re.search(r'\b(?:contract|contractor|fixed term|freelance)\b', normalized): return 'contract'
+    if re.search(r'\b(?:temporary|seasonal)\b', normalized): return 'temporary'
+    return None
+
+
+def _rules(text, title, source, location=''):
     salaries = _structured_salary(source)
     board_salary = source.get('salary')
     if isinstance(board_salary, str) and board_salary.strip():
@@ -478,28 +630,29 @@ def _rules(text, title, source):
                            'status': 'explicit', 'evidence': evidence(text, match.start(), match.end(), context=True)})
             names.add(name.casefold())
     modes = work_mode(text)
+    if modes.get('source') != 'jd_label':
+        # The board's own location/title ("Remote - US") beats free-text guesses.
+        placed = _place_mode(title, location)
+        if placed:
+            modes = placed
     types = employment_type(title + '\n' + text)
     if types.get('evidence'):
         types['evidence']['field'] = 'title_and_description'
     sf = source.get('structured_fields') or {}
     for key, obj in (('work_mode', modes), ('job_type', types)):
         val = sf.get(key)
-        mapping = {'remote': 'Remote', 'hybrid': 'Hybrid', 'on_site': 'Onsite', 'onsite': 'Onsite',
-                   'full-time': 'full_time', 'full time': 'full_time', 'part-time': 'part_time', 'part time': 'part_time',
-                   'full_time': 'full_time', 'part_time': 'part_time', 'contract': 'contract', 'temporary': 'temporary', 'internship': 'internship'}
-        normalized = re.sub(r'[_-]+', ' ', str(val).lower()).strip()
-        canonical = mapping.get(str(val).lower())
-        if not canonical:
-            if re.search(r'\bfull\s*time\b', normalized): canonical = 'full_time'
-            elif re.search(r'\bpart\s*time\b', normalized): canonical = 'part_time'
-            elif re.search(r'\b(?:internship|intern|co op)\b', normalized): canonical = 'internship'
-            elif re.search(r'\b(?:contract|contractor|fixed term|freelance)\b', normalized): canonical = 'contract'
-            elif re.search(r'\b(?:temporary|seasonal)\b', normalized): canonical = 'temporary'
+        canonical = _canonical(key, val)
         if canonical:
             if obj['value'] and canonical != obj['value']:
                 obj.update(value=None, status='conflict', candidates=[obj.copy(), {'value': canonical, 'source': 'board'}])
             else:
                 obj.update(value=canonical, source='board', status='explicit', evidence={'field': 'structured_fields.' + key, 'value': val})
+        elif not obj['value'] and obj.get('status') == 'not_stated':
+            # Last resort: the scraper's own top-level value (e.g. board metadata).
+            fallback = _canonical(key, source.get(key))
+            if fallback:
+                obj.update(value=fallback, source='board_field', status='explicit',
+                           evidence={'field': key, 'value': source.get(key)})
     education = []
     for match in re.finditer(r"\b(?:bachelor'?s?|master'?s?|Ph\.?D\.?|doctorate|associate'?s?|high school diploma|GED)(?:\s+degree)?\b", text, re.I):
         education.append({'value': match.group(), 'requirement': requirement(text, match.start(), match.end()),
@@ -524,7 +677,23 @@ def project(raw, result, text, original, source, key):
     base = [c for c in candidates if c['component'] == 'base']
     primary = base or [c for c in candidates if c['component'] == 'unspecified']
     selected = primary[0] if len(primary) == 1 else None
-    result['salary_status'] = ('ambiguous' if len(primary) > 1 else selected['status'] if selected else 'not_stated')
+    if len(primary) > 1:
+        # Real pay is a range; stray single amounts nearby (funding, stipends, "1.5x") are not.
+        ranges = [c for c in primary if c['min'] is not None and c['max'] is not None and c['min'] < c['max']]
+        ranges = [c for c in ranges if c['currency']] or ranges
+        currencies = {c['currency'] for c in ranges}
+        periods = {c['period'] for c in ranges if c['period']}
+        # Several ranges of one scale and currency are pay zones: one overall range.
+        if ranges and len(currencies) == 1 and len(periods) <= 1 and \
+                max(c['max'] for c in ranges) <= 4 * min(c['min'] for c in ranges):
+            if len(ranges) == 1:
+                selected = ranges[0]
+            else:
+                low, high = min(c['min'] for c in ranges), max(c['max'] for c in ranges)
+                currency, period = next(iter(currencies)), next(iter(periods), None)
+                selected = {'min': low, 'max': high, 'currency': currency, 'period': period, 'status': 'combined',
+                            'text': format_salary(low, high, currency, period)}
+    result['salary_status'] = (selected['status'] if selected else 'ambiguous' if len(primary) > 1 else 'not_stated')
     result['source_fields'] = deepcopy(source)
     result['input_hash'] = key
     result['description_sha256'] = sha256(text.encode()).hexdigest()
@@ -570,8 +739,9 @@ def extract_job(raw):
         original = description
     text = description_text(original)
     title = str(raw.get('job_title') or raw.get('title') or raw.get('jobTitle') or '')
-    key = sha256(json.dumps([VERSION, text, title, source, taxonomy_version(os.getenv('JOB_SKILLS_FILE', ''))], sort_keys=True, default=str).encode()).hexdigest()
-    result = cached_rules(key, lambda: _rules(text, title, source))
+    location = str(raw.get('location') or raw.get('location_str') or raw.get('jobLocation') or '')
+    key = sha256(json.dumps([VERSION, text, title, location, source, taxonomy_version(os.getenv('JOB_SKILLS_FILE', ''))], sort_keys=True, default=str).encode()).hexdigest()
+    result = cached_rules(key, lambda: _rules(text, title, source, location))
     if previous.get('input_hash') == key and previous.get('model', {}).get('status') == 'completed':
         result = previous
     return project(raw, result, text, original, source, key)
