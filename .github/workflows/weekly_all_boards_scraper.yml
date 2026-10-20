@@ -25,6 +25,42 @@ on:
         description: 'Optional prior run ID to reuse artifacts for merge-only recovery'
         required: false
         type: string
+      board:
+        description: 'Run all boards, or just one ATS / LinkedIn / Indeed'
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - Ashby
+          - Greenhouse
+          - Lever
+          - Workday
+          - SmartRecruiters
+          - Workable
+          - iCIMS
+          - Jobvite
+          - BambooHR
+          - Teamtailor
+          - Dice
+          - Adp
+          - LinkedIn
+          - Indeed
+      post_time:
+        description: 'Only jobs posted within this window'
+        required: true
+        default: week
+        type: choice
+        options:
+          - day
+          - week
+          - month
+          - any
+      insert_to_db:
+        description: 'Insert the scraped jobs into the Neon database (untick for a dry run; results are still saved as an artifact)'
+        required: true
+        default: true
+        type: boolean
 
 defaults:
   run:
@@ -34,14 +70,68 @@ permissions:
   contents: read
 
 jobs:
+  # 0. Decide what this run does. Scheduled runs use the defaults (everything,
+  #    one-week window, insert into Neon); manual runs can narrow all three.
+  plan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    outputs:
+      ats: ${{ steps.plan.outputs.ats }}
+      li: ${{ steps.plan.outputs.li }}
+      post_time: ${{ steps.plan.outputs.post_time }}
+      insert_db: ${{ steps.plan.outputs.insert_db }}
+      full_run: ${{ steps.plan.outputs.full_run }}
+    steps:
+      - name: Plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          BOARD: ${{ inputs.board || 'all' }}
+          POST_TIME: ${{ inputs.post_time || 'week' }}
+          INSERT_DB: ${{ github.event_name != 'workflow_dispatch' || inputs.insert_to_db }}
+          RUN_ATS: ${{ github.event_name != 'workflow_dispatch' || inputs.run_scrape_ats }}
+          RUN_LI: ${{ github.event_name != 'workflow_dispatch' || inputs.run_scrape_li_indeed }}
+          REUSE: ${{ inputs.reuse_artifacts_run_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          ATS = ["Ashby", "Greenhouse", "Lever", "Workday", "SmartRecruiters", "Workable",
+                 "iCIMS", "Jobvite", "BambooHR", "Teamtailor", "Dice", "Adp"]
+          LI = ["linkedin", "indeed"]
+          env = os.environ
+          board = env["BOARD"]
+          if board == "all":
+              ats = ATS if env["RUN_ATS"] == "true" else []
+              li = LI if env["RUN_LI"] == "true" else []
+          elif board in ATS:
+              ats, li = [board], []
+          else:  # LinkedIn / Indeed
+              ats, li = [], [board.lower()]
+          # Jobs missing from a scrape are only retired after a complete, default
+          # scrape: a single board, a short window or reused artifacts would make
+          # every job outside it look like it had disappeared.
+          full = env["EVENT"] != "workflow_dispatch" or (
+              board == "all" and env["RUN_ATS"] == "true" and env["RUN_LI"] == "true"
+              and env["POST_TIME"] == "week" and not env["REUSE"])
+          out = {"ats": json.dumps(ats), "li": json.dumps(li), "post_time": env["POST_TIME"],
+                 "insert_db": env["INSERT_DB"], "full_run": str(full).lower()}
+          with open(env["GITHUB_OUTPUT"], "a") as handle:
+              for key, value in out.items():
+                  handle.write(f"{key}={value}\n")
+          print(out)
+          PY
+
   # 1. Scrape ATS Boards (Lever, Greenhouse, Ashby, Workday, etc.)
   scrape-ats:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_scrape_ats }}
+    needs: plan
+    if: ${{ needs.plan.outputs.ats != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        board: [Ashby, Greenhouse, Lever, Workday, SmartRecruiters, Workable, iCIMS, Jobvite, BambooHR, Teamtailor, Dice, Adp]
+        board: ${{ fromJson(needs.plan.outputs.ats) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -60,7 +150,7 @@ jobs:
       - name: Run Scraper for ${{ matrix.board }}
         timeout-minutes: 360
         run: |
-          python pipeline.py --type-a-only --local-only --boards ${{ matrix.board }} --exclude-boards none --output ${{ matrix.board }}_jobs_weekly.json
+          python pipeline.py --type-a-only --local-only --boards ${{ matrix.board }} --exclude-boards none --post-time ${{ needs.plan.outputs.post_time }} --output ${{ matrix.board }}_jobs_weekly.json
         env:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
           PYTHONUNBUFFERED: "1"
@@ -70,13 +160,16 @@ jobs:
           # is enough for the matching pipeline. Run a targeted JD pass separately.
           WORKDAY_COMPANY_CONCURRENCY: "600"
           WORKDAY_SKIP_DETAILS: "true"
-          WORKDAY_POST_TIME: "week"
+          WORKDAY_POST_TIME: ${{ needs.plan.outputs.post_time }}
           BAMBOOHR_LIST_CONCURRENCY: "500"
           BAMBOOHR_DETAIL_CONCURRENCY: "200"
           BAMBOOHR_SKIP_DETAILS: "false"
-          BAMBOOHR_POST_TIME: "week"
+          BAMBOOHR_POST_TIME: ${{ needs.plan.outputs.post_time }}
+          WORKABLE_POST_TIME: ${{ needs.plan.outputs.post_time }}
           GREENHOUSE_CONCURRENCY: "800"
-          DEFAULT_POST_TIME: "week"
+          DEFAULT_POST_TIME: ${{ needs.plan.outputs.post_time }}
+          API_POST_TIME: ${{ needs.plan.outputs.post_time }}
+          GOOGLE_POST_TIME: ${{ needs.plan.outputs.post_time }}
           SKIP_DETAILS: "false"
 
       - name: Upload ATS Artifact
@@ -88,12 +181,13 @@ jobs:
 
   # 2. Scrape LinkedIn & Indeed for the 68 roles (Sharded)
   scrape-li-indeed:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_scrape_li_indeed }}
+    needs: plan
+    if: ${{ needs.plan.outputs.li != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        board: [linkedin, indeed]
+        board: ${{ fromJson(needs.plan.outputs.li) }}
         shard: ["1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "8/8"]
     steps:
       - name: Checkout repository
@@ -111,13 +205,13 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install python-jobspy pandas python-dotenv openpyxl httpx
 
-      - name: Run ${{ matrix.board }} Shard ${{ matrix.shard }} (1 Week Post Time, Full Details)
+      - name: Run ${{ matrix.board }} Shard ${{ matrix.shard }} (post time ${{ needs.plan.outputs.post_time }}, full details)
         timeout-minutes: 360
         run: |
           if [ "${{ matrix.board }}" = "linkedin" ]; then
-            python linkedin/linkedin_68_roles.py --post-time week --shard "${{ matrix.shard }}" --fast --max-results all
+            python linkedin/linkedin_68_roles.py --post-time ${{ needs.plan.outputs.post_time }} --shard "${{ matrix.shard }}" --fast --max-results all
           else
-            python indeed/indeed_68_roles.py --post-time week --shard "${{ matrix.shard }}" --fast --max-results all
+            python indeed/indeed_68_roles.py --post-time ${{ needs.plan.outputs.post_time }} --shard "${{ matrix.shard }}" --fast --max-results all
           fi
         env:
           PYTHONUNBUFFERED: "1"
@@ -133,10 +227,11 @@ jobs:
 
   # 3. Merge everything and commit to repo
   merge-and-commit:
-    needs: [scrape-ats, scrape-li-indeed]
+    needs: [plan, scrape-ats, scrape-li-indeed]
     if: >-
       ${{
         always() &&
+        needs.plan.result == 'success' &&
         (github.event_name != 'workflow_dispatch' || inputs.run_merge) &&
         (needs.scrape-ats.result == 'success' || needs.scrape-ats.result == 'skipped') &&
         (needs.scrape-li-indeed.result == 'success' || needs.scrape-li-indeed.result == 'skipped')
@@ -346,6 +441,7 @@ jobs:
           retention-days: 90
 
       - name: Install psycopg for Neon upsert
+        if: ${{ needs.plan.outputs.insert_db == 'true' }}
         run: pip install "psycopg[binary]"
 
       - name: Audit merged job field completeness
@@ -357,7 +453,14 @@ jobs:
 
       # Fails visibly when any batch is rejected (e.g. storage quota), instead
       # of reporting a green run with a partially updated database.
+      - name: Database insert skipped (insert_to_db is off)
+        if: ${{ needs.plan.outputs.insert_db != 'true' }}
+        run: |
+          echo "### Dry run: nothing was written to the database" >> "$GITHUB_STEP_SUMMARY"
+          echo "The scraped jobs are in this run's artifacts: **jobs-ats-<Board>** for ATS boards, **job-results** for LinkedIn/Indeed." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Push jobs to Neon (public.jobs)
+        if: ${{ needs.plan.outputs.insert_db == 'true' }}
         run: |
           python3 -c "
           import json, glob, csv, logging, os, sys
@@ -400,5 +503,5 @@ jobs:
           "
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          # Reused artifacts are old snapshots; never expire jobs based on them.
-          EXPIRE_MISSING: ${{ github.event_name != 'workflow_dispatch' || inputs.reuse_artifacts_run_id == '' }}
+          # Only a complete default scrape may retire jobs it did not see (see plan).
+          EXPIRE_MISSING: ${{ needs.plan.outputs.full_run }}
