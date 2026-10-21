@@ -14442,3 +14442,5 @@ zuva
 camstex
 mojave-energy-systems
 quantum-health
+lovehoneygroup
+quantinuum
