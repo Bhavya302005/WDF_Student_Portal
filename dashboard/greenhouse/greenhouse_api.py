@@ -165,6 +165,52 @@ def format_iso_time(ts: str | None) -> str | None:
         return ts
 
 
+_GH_WORK_MODE = re.compile(r"remote|workplace|work location type|location type|work arrangement|work model|work type|on-?site", re.I)
+_GH_JOB_TYPE = re.compile(r"employment type|time type|job type|position type|employment status|worker type|work schedule", re.I)
+_GH_YEARS = re.compile(r"years?.{0,12}exp|exp.{0,20}years?", re.I)
+
+
+def structured_fields(job: dict[str, Any], location: str = "") -> dict[str, Any]:
+    """Board facts from the posting's pay ranges and custom metadata (names differ per company)."""
+    out: dict[str, Any] = {}
+    ranges = [r for r in job.get("pay_input_ranges") or [] if isinstance(r, dict) and r.get("max_cents")]
+    if ranges:
+        currencies = {r.get("currency_type") for r in ranges}
+        currency = next(iter(currencies)) if len(currencies) == 1 else None
+        if currency is None:
+            from job_extraction.engine import dollar_currency
+            local = dollar_currency(location)
+            ranges = [r for r in ranges if r.get("currency_type") == local] or ranges[:1]
+            currency = ranges[0].get("currency_type")
+        low = min(r.get("min_cents") or r["max_cents"] for r in ranges) / 100
+        high = max(r["max_cents"] for r in ranges) / 100
+        if 0 < low <= high <= 4 * low:  # one scale: pay zones of one job, not unrelated figures
+            out["salary"] = {"min": low, "max": high, "currency": currency, "component": "base",
+                             "location": ranges[0].get("title") if len(ranges) == 1 else None}
+    for field in job.get("metadata") or []:
+        name, value = str(field.get("name") or ""), field.get("value")
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, list):
+            value = ", ".join(str(v) for v in value if v)
+        if field.get("value_type") == "currency_range" and isinstance(value, dict):
+            try:
+                low, high = float(value.get("min_value") or 0), float(value.get("max_value") or 0)
+            except (TypeError, ValueError):
+                continue
+            if high > 0 and re.search(r"salary|compensation|pay|wage", name, re.I) and "salary" not in out:
+                out["salary"] = {"min": low or high, "max": high, "currency": value.get("unit"), "component": "base"}
+        elif isinstance(value, str) and _GH_WORK_MODE.search(name):
+            out.setdefault("work_mode", value)
+        elif isinstance(value, str) and _GH_JOB_TYPE.search(name):
+            out.setdefault("job_type", value)
+        elif _GH_YEARS.search(name):
+            years = re.search(r"\d+(?:\.\d+)?", str(value))
+            if years and 0 <= float(years.group()) <= 40:
+                out.setdefault("experience_min", float(years.group()))
+    return out
+
+
 def normalize_job(job: dict[str, Any], company_slug: str) -> dict[str, Any]:
     title = (job.get("title") or "").strip()
     location = (job.get("location", {}).get("name") or "").strip()
@@ -174,9 +220,8 @@ def normalize_job(job: dict[str, Any], company_slug: str) -> dict[str, Any]:
     raw_key = f"greenhouse:{company_slug}:{job_id}"
     dedupe_key = hashlib.md5(raw_key.encode()).hexdigest()
 
-    # Greenhouse's API doesn't expose salary/work-mode/experience/skills as
-    # structured fields, so those are left for enrich_raw_job() below to
-    # derive from the description via scraper_utils' shared extraction.
+    # Pay ranges and company metadata are board facts; the rest comes from the
+    # description through enrich_raw_job()'s shared extraction.
     return enrich_raw_job({
         "id": dedupe_key,
         "job_title": title,
@@ -188,7 +233,8 @@ def normalize_job(job: dict[str, Any], company_slug: str) -> dict[str, Any]:
         "description_raw": job.get("content") or desc_text,
         "source_board": "Greenhouse",
         "scraper_type": "api",
-        "job_type": "full_time",
+        # No default job type: an unstated one is unknown, not full-time.
+        "structured_fields": structured_fields(job, location),
         "scraped_at": format_iso_time(datetime.now(timezone.utc).isoformat()),
         # first_published is when the job went live; updated_at moves on every edit.
         "created_at": format_iso_time(job.get("first_published") or job.get("updated_at")) or format_iso_time(datetime.now(timezone.utc).isoformat()),
@@ -346,7 +392,8 @@ class DirectGreenhouseScraper:
         slug = to_greenhouse_slug(company)
         if not slug:
             return FetchResult(company, [])
-        url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
+        # pay_transparency adds the posted pay ranges (pay_input_ranges) where the company publishes them.
+        url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true&pay_transparency=true"
         filters = build_filters(job_profile, location)
         now_utc = datetime.now(timezone.utc)
         out: list[dict[str, Any]] = []

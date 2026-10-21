@@ -824,22 +824,12 @@ def normalize_job_dict(
     raw_key = f"icims:{company_slug}:{job_id}"
     dedupe_key = hashlib.md5(raw_key.encode()).hexdigest()
 
-    comp: dict[str, Any] = {}
-    sal_str = extract_salary(desc_text, comp)
+    # The posting's own salary (baseSalary below) is board data; pay stated in the text is read
+    # by the shared extractor in enrich_raw_job. Feeding an earlier text guess back in as the
+    # board's salary would let it win over that extractor (e.g. "$30" from "$30M revenue").
+    sal_str = ""
     salary_min = None
     salary_max = None
-    if sal_str:
-        sal_norm = sal_str.lower().replace("l", "00000").replace("k", "000")
-        nums = []
-        for n in re.findall(r"[\d,]+\.?\d*", sal_norm):
-            try:
-                nums.append(int(float(n.replace(",", ""))))
-            except ValueError:
-                pass
-        if len(nums) >= 2:
-            salary_min, salary_max = nums[0], nums[1]
-        elif len(nums) == 1:
-            salary_min = salary_max = nums[0]
 
     wm = extract_work_mode(title, job_location, desc_text)
 

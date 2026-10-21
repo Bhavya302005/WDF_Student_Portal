@@ -57,21 +57,44 @@ COLUMNS = (
 LARGE_COLUMNS = ("description", "basic_qualifications", "preferred_qualifications",
                  "key_responsibilities", "extraction")
 
+# Everything read out of the description. A re-scrape that comes back without the
+# description (Workday fetches details only for new postings; a detail request can time
+# out) keeps the stored values instead of wiping them.
+DESCRIPTION_COLUMNS = ("description", "skills_required", "skills_preferred", "experience_min", "experience_max",
+                       "experience", "salary", "salary_min", "salary_max", "salary_currency", "salary_period",
+                       "basic_qualifications", "preferred_qualifications", "key_responsibilities", "extraction")
+# Board fields that the description may have supplied: keep the stored one when the thin row has none.
+_FILL_COLUMNS = ("work_mode", "is_remote", "job_type")
+_THIN = "(nullif(EXCLUDED.description, '') IS NULL AND nullif(jobs.description, '') IS NOT NULL)"
+
 _CONTENT_COLUMNS = [column for column in COLUMNS if column != "id"]
-_CHANGED = ("(" + ", ".join(f"jobs.{c}" for c in _CONTENT_COLUMNS) + ") IS DISTINCT FROM ("
-            + ", ".join(f"EXCLUDED.{c}" for c in _CONTENT_COLUMNS) + ")")
 
 
-def _assignment(column: str) -> str:
+def _new_value(column: str) -> str:
+    """The value a conflicting row ends up with."""
     if column == "posted_at":
         # A posting date only moves back: boards report their last-edit time
         # (Greenhouse updated_at), and an edit must not make an old job look new.
         # LEAST ignores NULL, so a newly found date still fills an empty one.
-        return "posted_at = LEAST(jobs.posted_at, EXCLUDED.posted_at)"
+        return "LEAST(jobs.posted_at, EXCLUDED.posted_at)"
+    if column in DESCRIPTION_COLUMNS:
+        return f"CASE WHEN {_THIN} THEN jobs.{column} ELSE EXCLUDED.{column} END"
+    if column in _FILL_COLUMNS:
+        return f"CASE WHEN {_THIN} THEN coalesce(nullif(EXCLUDED.{column}::text, ''), jobs.{column}::text)::{_TYPES[column]} ELSE EXCLUDED.{column} END"
+    return f"EXCLUDED.{column}"
+
+
+_TYPES = {"work_mode": "text", "is_remote": "boolean", "job_type": "text"}
+_CHANGED = ("(" + ", ".join(f"jobs.{c}" for c in _CONTENT_COLUMNS) + ") IS DISTINCT FROM ("
+            + ", ".join(_new_value(c) for c in _CONTENT_COLUMNS) + ")")
+
+
+def _assignment(column: str) -> str:
+    value = _new_value(column)
     if column in LARGE_COLUMNS:
-        return (f"{column} = CASE WHEN jobs.{column} IS DISTINCT FROM EXCLUDED.{column} "
-                f"THEN EXCLUDED.{column} ELSE jobs.{column} END")
-    return f"{column} = EXCLUDED.{column}"
+        return (f"{column} = CASE WHEN jobs.{column} IS DISTINCT FROM {value} "
+                f"THEN {value} ELSE jobs.{column} END")
+    return f"{column} = {value}"
 
 
 UPSERT_SQL = (

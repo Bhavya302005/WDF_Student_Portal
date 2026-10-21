@@ -172,11 +172,9 @@ class DirectJobviteScraper:
 
                 now = datetime.now(timezone.utc).isoformat()
                 
-                # Extract Salary
+                # Pay is read from the description by the shared extractor (enrich_raw_job), which
+                # can tell it from bonuses and allowances; the first "$..." in the text is not it.
                 salary = ""
-                sal_match = re.search(r'(?:[\$£€])[\d,]+[kK]?\s*(?:-|to|—|–|&mdash;|&ndash;)\s*(?:[\$£€])?[\d,]+[kK]?|(?:[\$£€])[\d,]+[kK]', job_description)
-                if sal_match:
-                    salary = sal_match.group(0)
 
                 # Extract Experience
                 experience = ""

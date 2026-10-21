@@ -165,11 +165,11 @@ jobs:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
           PYTHONUNBUFFERED: "1"
           MAX_CONCURRENT_JOBS: "800"
-          # Workday: skip per-JD detail fetching — 147k JDs at 2/s = never finishes.
-          # We collect all job listings (title, company, location, post_date) which
-          # is enough for the matching pipeline. Run a targeted JD pass separately.
+          # Workday: fetch the job page (description, salary, skills, work mode) only for postings
+          # inside the post-time window, i.e. the new ones. Without a window (post_time any)
+          # that would be every listed job (~150k requests), so details stay off then.
           WORKDAY_COMPANY_CONCURRENCY: "600"
-          WORKDAY_SKIP_DETAILS: "true"
+          WORKDAY_SKIP_DETAILS: ${{ needs.plan.outputs.post_time == 'any' && 'true' || 'false' }}
           WORKDAY_POST_TIME: ${{ needs.plan.outputs.post_time }}
           BAMBOOHR_LIST_CONCURRENCY: "500"
           BAMBOOHR_DETAIL_CONCURRENCY: "200"

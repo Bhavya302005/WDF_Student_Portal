@@ -70,6 +70,32 @@ class SaveJobsIntegrationTests(unittest.TestCase):
     def table_bytes(self) -> int:
         return self.query("SELECT pg_total_relation_size('public.jobs')")[0][0]
 
+    def test_a_rescrape_without_the_description_keeps_what_was_read_from_it(self) -> None:
+        full = {"id": "wd-1", "job_title": "Buyer", "source_board": "Workday", "work_mode": "Hybrid",
+                "description": "Pay range: $80,000 - $95,000 per year. 5+ years of SAP experience required.",
+                "salary_min": 80000, "salary_max": 95000, "salary_currency": "USD", "salary_period": "year",
+                "experience_min": 5, "skills_required": ["SAP"], "location": "Austin, TX"}
+        self.module.save_jobs([full], vacuum_every=10**9)
+        before = self.query("SELECT updated_at FROM public.jobs WHERE id = 'wd-1'")[0][0]
+        # Next week the list page only: no description, no salary, no work mode, a new location.
+        thin = {"id": "wd-1", "job_title": "Buyer", "source_board": "Workday", "location": "Austin, Texas"}
+        self.module.save_jobs([thin], vacuum_every=10**9)
+        row = self.query("SELECT description, salary_min, experience_min, skills_required::text, work_mode, location, updated_at "
+                         "FROM public.jobs WHERE id = 'wd-1'")[0]
+        self.assertTrue(row[0].startswith("Pay range"))
+        self.assertEqual((float(row[1]), float(row[2]), row[4]), (80000.0, 5.0, "hybrid"))
+        self.assertIn("SAP", row[3])
+        self.assertEqual(row[5], "Austin, Texas")       # list-page fields still update
+        self.assertGreater(row[6], before)              # and the change is recorded
+        # Seen again unchanged: nothing to update.
+        self.module.save_jobs([thin], vacuum_every=10**9)
+        self.assertEqual(self.query("SELECT updated_at FROM public.jobs WHERE id = 'wd-1'")[0][0], row[6])
+        # A full row with a new description replaces everything, including clearing the salary.
+        self.module.save_jobs([{**full, "description": "Updated posting, no pay stated.", "salary_min": None, "salary_max": None}],
+                              vacuum_every=10**9)
+        self.assertEqual(self.query("SELECT description, salary_min FROM public.jobs WHERE id = 'wd-1'")[0],
+                         ("Updated posting, no pay stated.", None))
+
     def test_posted_date_only_moves_back(self) -> None:
         job = {"id": "gh-1", "job_title": "Buyer", "source_board": "Greenhouse", "description": "x"}
         self.module.save_jobs([{**job, "posted_at": "2026-09-09T08:00:00+00:00"}], vacuum_every=10**9)

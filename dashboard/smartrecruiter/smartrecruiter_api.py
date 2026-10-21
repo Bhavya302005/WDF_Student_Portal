@@ -226,12 +226,13 @@ def normalize_job(job: dict[str, Any], company_slug: str) -> dict[str, Any]:
         elif "min. salary" in lbl and val: min_sal = val
         elif "max. salary" in lbl and val: max_sal = val
 
+    # Only the company's own salary fields; amounts in the text are left to the extractor,
+    # which can tell pay from referral bonuses and allowances.
     salary = f"{min_sal} - {max_sal}" if min_sal and max_sal else (min_sal or max_sal)
-    if not salary:
-        m = re.search(r"(?:[$£€])[\d,]+[kK]?\s*(?:-|to)?\s*(?:[$£€])?[\d,]+[kK]?", desc)
-        salary = m.group(0) if m else ""
 
-    structured_mode = "Hybrid" if loc_obj.get("hybrid") else "Remote" if loc_obj.get("remote") else ""
+    # SmartRecruiters' workplace setting: remote / hybrid flags, both false meaning on-site.
+    structured_mode = ("Hybrid" if loc_obj.get("hybrid") else "Remote" if loc_obj.get("remote") else
+                       "Onsite" if loc_obj.get("remote") is False and loc_obj.get("hybrid") is False else "")
     work_mode = custom_wm or structured_mode or extract_work_mode(title, job_location, desc)
 
     job_id  = job.get("id") or title
