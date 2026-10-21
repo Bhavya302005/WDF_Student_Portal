@@ -22,6 +22,25 @@ def _unwrap(value):
     return getattr(value, "obj", value)
 
 
+class RowsToFreeTests(unittest.TestCase):
+    def free(self, **overrides) -> int:
+        values = dict(live_bytes=800e6, new_bytes=100e6, physical_jobs_bytes=850e6, headroom_bytes=0,
+                      avg_row_bytes=5e3, buffer=1.0)
+        values.update(overrides)
+        from db.neon_upsert import rows_to_free
+        return rows_to_free(**values)
+
+    def test_nothing_to_free_when_new_rows_fit_in_existing_space_or_headroom(self) -> None:
+        self.assertEqual(self.free(new_bytes=40e6), 0)                    # 800+40 <= 850: reuses freed space
+        self.assertEqual(self.free(headroom_bytes=60e6), 0)               # 800+100 <= 850+60
+        self.assertEqual(self.free(avg_row_bytes=0), 0)
+
+    def test_frees_just_enough_rows_for_the_overflow(self) -> None:
+        self.assertEqual(self.free(), 10_000)                             # 50 MB over / 5 KB per row
+        self.assertEqual(self.free(headroom_bytes=25e6), 5_000)
+        self.assertEqual(self.free(buffer=1.05), 10_500)
+
+
 class MapJobTests(unittest.TestCase):
     def test_canonical_fields_win_over_aliases_regardless_of_order(self) -> None:
         row = map_job({
