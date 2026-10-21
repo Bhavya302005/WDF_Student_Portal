@@ -127,6 +127,69 @@ class SaveJobsIntegrationTests(unittest.TestCase):
         self.assertEqual(statuses["job-9"], "expired")  # applied: expired but kept
         self.assertEqual({statuses[f"job-{i}"] for i in range(7)}, {"active"})
 
+    def database_mb(self) -> float:
+        return self.query("SELECT pg_database_size(current_database())")[0][0] / 2**20
+
+    def fill_for_budget(self):
+        """600 jobs; 0-99 unseen for 60 days, 100-199 for 30 days, the rest recent; job-0 saved; job-150 expired."""
+        self.module.save_jobs(self.jobs(600), vacuum_every=10**9)
+        self.execute("UPDATE public.jobs SET last_seen_at = now() - interval '60 days' WHERE id = ANY(%s)",
+                     [f"job-{i}" for i in range(100)])
+        self.execute("UPDATE public.jobs SET last_seen_at = now() - interval '30 days' WHERE id = ANY(%s)",
+                     [f"job-{i}" for i in range(100, 200)])
+        self.execute("UPDATE public.jobs SET status = 'expired' WHERE id = 'job-150'")
+        self.execute("INSERT INTO public.user_job_recommendations VALUES "
+                     "('00000000-0000-0000-0000-000000000001', 'job-0', 'saved')")
+        # This run re-sees job-300..599 and brings 100 new jobs, with no headroom left under the limit.
+        refreshed = self.jobs(600)[300:]
+        brand_new = [{**job, "id": f"new-{i}", "job_title": f"New {i}"} for i, job in enumerate(self.jobs(100))]
+        return refreshed + brand_new
+
+    def test_storage_budget_removes_the_stalest_unprotected_jobs_to_fit_new_ones(self) -> None:
+        incoming = self.fill_for_budget()
+        limit = {"JOBS_DB_MAX_MB": str(self.database_mb() / 0.92)}  # budget == current size: no headroom
+        with mock.patch.dict(os.environ, limit):
+            self.module.save_jobs(incoming, vacuum_every=10**9)
+        ids = {row[0] for row in self.query("SELECT id FROM public.jobs")}
+        removed = {f"job-{i}" for i in range(600)} - ids
+        self.assertTrue(70 <= len(removed) <= 160, len(removed))              # about the 100 new jobs' worth
+        self.assertIn("job-150", removed)                                      # expired goes first
+        self.assertNotIn("job-0", removed)                                     # saved: protected
+        self.assertTrue(removed <= {f"job-{i}" for i in range(1, 300)})        # only unseen jobs are candidates
+        self.assertTrue({f"job-{i}" for i in range(1, 70)} <= removed)         # stalest (60 days) before 30-day ones
+        self.assertTrue({f"job-{i}" for i in range(300, 600)} <= ids)          # seen in this run: kept
+        self.assertEqual(sum(1 for i in ids if i.startswith("new-")), 100)     # and the new ones all fit
+
+    def test_storage_budget_dry_run_and_no_limit_delete_nothing(self) -> None:
+        incoming = self.fill_for_budget()
+        before = self.query("SELECT count(*) FROM public.jobs")[0][0]
+        with mock.patch.dict(os.environ, {"JOBS_DB_MAX_MB": str(self.database_mb() / 0.92), "JOB_RETENTION_DRY_RUN": "true"}):
+            self.module.save_jobs(incoming, vacuum_every=10**9)
+        self.assertEqual(self.query("SELECT count(*) FROM public.jobs")[0][0], before + 100)  # only the inserts
+        self.execute("DELETE FROM public.jobs WHERE starts_with(id, 'new-')")
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("JOBS_DB_MAX_MB", None)
+            self.module.save_jobs(incoming, vacuum_every=10**9)
+        self.assertEqual(self.query("SELECT count(*) FROM public.jobs")[0][0], before + 100)
+
+    def test_storage_budget_never_deletes_more_than_the_cap(self) -> None:
+        incoming = self.fill_for_budget()
+        with mock.patch.dict(os.environ, {"JOBS_DB_MAX_MB": str(self.database_mb() / 0.92),
+                                          "JOB_RETENTION_MAX_DELETE_PCT": "5"}):
+            self.module.save_jobs(incoming, vacuum_every=10**9)
+        self.assertGreaterEqual(self.query("SELECT count(*) FROM public.jobs")[0][0], 600 - 30)  # 5% of 600
+
+    def test_expired_jobs_are_deleted_by_default_after_a_week(self) -> None:
+        self.module.save_jobs(self.jobs(6, "text"))
+        self.execute("UPDATE public.jobs SET status = 'expired', updated_at = now() - interval '10 days' WHERE id IN ('job-4', 'job-5')")
+        self.execute("UPDATE public.jobs SET status = 'expired', updated_at = now() - interval '2 days' WHERE id = 'job-3'")
+        self.execute("UPDATE public.jobs SET last_seen_at = now() - interval '20 days' WHERE id = 'job-1'")
+        # A run that sees job-0 and job-2 (2 of the 3 active jobs, so it counts as complete).
+        self.module.save_jobs([self.jobs(6, "text")[0], self.jobs(6, "text")[2]], expire_missing=True)
+        status = dict(self.query("SELECT id, status FROM public.jobs"))
+        self.assertEqual(status, {"job-0": "active", "job-1": "expired",  # unseen 20 days (> 14): expired now, deleted later
+                                  "job-2": "active", "job-3": "expired"})  # expired 2 days ago: kept; 4 and 5 (10 days): deleted
+
     def test_partial_run_does_not_expire_unseen_jobs(self) -> None:
         self.module.save_jobs(self.jobs(10, "text"))
         self.execute("UPDATE public.jobs SET last_seen_at = now() - interval '30 days' WHERE id <> 'job-0'")

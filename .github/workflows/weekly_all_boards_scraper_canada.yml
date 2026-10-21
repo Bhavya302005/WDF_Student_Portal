@@ -392,3 +392,8 @@ jobs:
           "
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          # Storage: before inserting, remove the stalest jobs so the new ones fit (see db/neon_upsert.py).
+          # Set the repository variable JOBS_DB_MAX_MB to the Neon project's storage limit to turn it on.
+          JOBS_DB_MAX_MB: ${{ vars.JOBS_DB_MAX_MB }}
+          JOB_EXPIRE_DAYS: ${{ vars.JOB_EXPIRE_DAYS || '14' }}
+          JOB_PURGE_EXPIRED_DAYS: ${{ vars.JOB_PURGE_EXPIRED_DAYS || '7' }}

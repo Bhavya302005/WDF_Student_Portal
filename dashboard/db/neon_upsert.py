@@ -104,6 +104,131 @@ WHERE j.status = 'expired'
 """
 
 # ---------------------------------------------------------------------------
+# Storage budget: make room before writing
+# ---------------------------------------------------------------------------
+
+# Jobs a run may remove to make room, in this order: already expired first, then the
+# longest unseen. Never a job seen in this run (incoming_ids) or one a user saved or
+# applied to. Deleting cascades to feed rows, so those protections matter.
+VICTIM_ORDER_SQL = """
+FROM public.jobs j
+WHERE NOT EXISTS (SELECT 1 FROM incoming_ids i WHERE i.id = j.id)
+  AND NOT EXISTS (SELECT 1 FROM public.user_job_recommendations r
+                  WHERE r.job_id = j.id AND r.status IN ('saved', 'applied'))
+ORDER BY (j.status = 'expired') DESC,
+         coalesce(j.last_seen_at, j.updated_at) ASC,
+         coalesce(j.posted_at, j.created_at) ASC
+LIMIT %(count)s
+"""
+
+_TOAST_OVERHEAD = 1.08  # chunk headers and page padding on top of the stored size of long text
+
+
+def rows_to_free(*, live_bytes: float, new_bytes: float, physical_jobs_bytes: float,
+                 headroom_bytes: float, avg_row_bytes: float, buffer: float = 1.05) -> int:
+    """How many existing rows must go so `new_bytes` of new rows fit without outgrowing the budget.
+
+    Deleted rows leave space inside the files that later inserts reuse (after VACUUM), so the
+    database only grows when live data exceeds what the files already hold plus the headroom
+    left under the budget. Pure arithmetic, so it is easy to test.
+    """
+    overflow = (live_bytes + new_bytes) - (physical_jobs_bytes + headroom_bytes)
+    if overflow <= 0 or avg_row_bytes <= 0:
+        return 0
+    return int(-(-overflow * buffer // avg_row_bytes))
+
+
+def _summary(text: str) -> None:
+    """Show a line in the GitHub Actions run summary, when running there."""
+    path = os.getenv("GITHUB_STEP_SUMMARY")
+    if path:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(text + "\n")
+
+
+def _storage_numbers(cur) -> dict:
+    """Cost of one job, measured from the real table: the main table and indexes per row,
+    plus the long text (stored out of line) from a sample."""
+    row_count = cur.execute("SELECT count(*) FROM public.jobs").fetchone()[0]
+    # Only text over ~2 KB is stored out of line; shorter values already sit in the main
+    # table's rows, which are measured by the heap size below (counting them twice overshot).
+    long_text = " + ".join(
+        f"CASE WHEN pg_column_size({col}) > 2000 THEN pg_column_size({col}) ELSE 0 END"
+        for col in ("description", "extraction", "basic_qualifications", "preferred_qualifications", "key_responsibilities"))
+    sample = cur.execute(f"SELECT avg({long_text}) FROM public.jobs TABLESAMPLE SYSTEM (2)").fetchone()[0]
+    if sample is None:  # tiny tables can sample empty
+        sample = cur.execute(f"SELECT avg({long_text}) FROM public.jobs").fetchone()[0] or 0
+    heap = cur.execute("SELECT pg_relation_size('public.jobs')").fetchone()[0]
+    indexes = cur.execute("SELECT pg_indexes_size('public.jobs')").fetchone()[0]
+    total_jobs = cur.execute("SELECT pg_total_relation_size('public.jobs')").fetchone()[0]
+    database = cur.execute("SELECT pg_database_size(current_database())").fetchone()[0]
+    per_row = ((heap + indexes) / row_count + float(sample) * _TOAST_OVERHEAD) if row_count else 0.0
+    return {"rows": row_count, "avg_row_bytes": per_row, "live_bytes": per_row * row_count,
+            "physical_jobs_bytes": total_jobs, "database_bytes": database}
+
+
+def make_room(conn, incoming_ids: list[str]) -> int:
+    """Delete the stalest jobs so this run's new jobs fit under JOBS_DB_MAX_MB. Returns rows deleted.
+
+    Environment:
+      JOBS_DB_MAX_MB          storage limit of the Neon project in MB; unset = no limit enforced
+      JOBS_DB_SAFETY_PCT      use at most this share of the limit (default 92)
+      JOB_RETENTION_MAX_DELETE_PCT  most one run may delete, as a share of the table (default 35)
+      JOB_RETENTION_DRY_RUN   "true" = only report what would be deleted
+    """
+    limit_mb = os.getenv("JOBS_DB_MAX_MB", "").strip()
+    if not limit_mb:
+        return 0
+    MiB = 1024 * 1024
+    budget = float(limit_mb) * MiB * float(os.getenv("JOBS_DB_SAFETY_PCT", "92")) / 100
+    dry_run = os.getenv("JOB_RETENTION_DRY_RUN", "").lower() == "true"
+    # Dead row versions only count as reusable space once vacuumed; measure after that.
+    conn.commit()
+    _vacuum(os.environ["NEON_DATABASE_URL"])
+    with conn.cursor() as cur:
+        if cur.execute("SELECT to_regclass('public.user_job_recommendations')").fetchone()[0] is None:
+            log.warning("Storage budget skipped: cannot verify saved/applied jobs are protected.")
+            return 0
+        numbers = _storage_numbers(cur)
+        cur.execute("CREATE TEMP TABLE incoming_ids (id text PRIMARY KEY) ON COMMIT DROP")
+        with cur.copy("COPY incoming_ids (id) FROM STDIN") as copy:
+            for job_id in incoming_ids:
+                copy.write_row((job_id,))
+        new_rows = cur.execute(
+            "SELECT count(*) FROM incoming_ids i WHERE NOT EXISTS (SELECT 1 FROM public.jobs j WHERE j.id = i.id)"
+        ).fetchone()[0]
+        headroom = max(0.0, budget - numbers["database_bytes"])
+        needed = rows_to_free(live_bytes=numbers["live_bytes"], new_bytes=new_rows * numbers["avg_row_bytes"],
+                              physical_jobs_bytes=numbers["physical_jobs_bytes"], headroom_bytes=headroom,
+                              avg_row_bytes=numbers["avg_row_bytes"])
+        line = (f"Storage: database {numbers['database_bytes'] / MiB:.0f} MB of {float(limit_mb):.0f} MB "
+                f"(budget {budget / MiB:.0f} MB), {numbers['rows']} jobs, {new_rows} new in this run, "
+                f"~{numbers['avg_row_bytes'] / 1024:.1f} KB per job.")
+        log.info(line)
+        if needed == 0:
+            _summary(f"- {line} Enough room, nothing removed.")
+            conn.rollback()
+            return 0
+        cap = int(numbers["rows"] * float(os.getenv("JOB_RETENTION_MAX_DELETE_PCT", "35")) / 100)
+        count = min(needed, cap)
+        if count < needed:
+            log.warning(f"Needs to free {needed} jobs but one run may remove at most {cap}; removing {cap}.")
+        if dry_run:
+            rows = cur.execute(f"SELECT j.source_board, j.status, count(*) FROM (SELECT j.* {VICTIM_ORDER_SQL}) j "
+                               "GROUP BY 1, 2 ORDER BY 3 DESC", {"count": count}).fetchall()
+            log.info(f"DRY RUN: would remove {count} jobs: {rows}")
+            _summary(f"- {line} **Dry run:** would remove {count} stalest jobs: {rows}")
+            conn.rollback()
+            return 0
+        cur.execute(f"DELETE FROM public.jobs WHERE id IN (SELECT j.id {VICTIM_ORDER_SQL})", {"count": count})
+        deleted = cur.rowcount
+    conn.commit()
+    log.info(f"Removed {deleted} of the stalest jobs to make room for {new_rows} new ones.")
+    _summary(f"- {line} Removed **{deleted}** stalest jobs (expired or longest unseen) to make room.")
+    return deleted
+
+
+# ---------------------------------------------------------------------------
 # Known field aliases from different scrapers
 # ---------------------------------------------------------------------------
 
@@ -437,8 +562,10 @@ def save_jobs(jobs: list[dict], batch_size: int = 500, *, expire_missing: bool =
     jobs           : list of raw scraper job dicts
     batch_size     : rows per executemany call (500 is a safe default)
     expire_missing : after a fully successful upsert, mark jobs not seen for
-                     JOB_EXPIRE_DAYS (default 21) as expired. Deleting expired
-                     jobs only happens when JOB_PURGE_EXPIRED_DAYS is set.
+                     JOB_EXPIRE_DAYS (default 14, two missed weekly runs) as
+                     expired, and delete jobs expired for JOB_PURGE_EXPIRED_DAYS
+                     (default 7; set it empty to keep expired jobs). Saved and
+                     applied jobs are never deleted.
     vacuum_every   : VACUUM after this many written rows to bound bloat.
 
     Returns
@@ -472,6 +599,7 @@ def save_jobs(jobs: list[dict], batch_size: int = 500, *, expire_missing: bool =
     with psycopg.connect(database_url) as conn:
         conn.execute(MIGRATION_SQL)
         conn.commit()
+        make_room(conn, [row["id"] for row in unique_rows])
         with conn.cursor() as cur:
             for i in range(0, len(unique_rows), batch_size):
                 batch = unique_rows[i : i + batch_size]
@@ -492,9 +620,10 @@ def save_jobs(jobs: list[dict], batch_size: int = 500, *, expire_missing: bool =
         if since_vacuum:
             _vacuum(database_url)
         if expire_missing and not failures:
-            purge = os.getenv("JOB_PURGE_EXPIRED_DAYS")
-            _expire_and_purge(conn, len(unique_rows), int(os.getenv("JOB_EXPIRE_DAYS", "21")),
-                              int(purge) if purge else None)
+            # Expired jobs are deleted after a week by default; without this the table only grew.
+            purge = os.getenv("JOB_PURGE_EXPIRED_DAYS", "7")
+            _expire_and_purge(conn, len(unique_rows), int(os.getenv("JOB_EXPIRE_DAYS", "14")),
+                              int(purge) if purge.strip() else None)
 
     log.info(f"Neon upsert complete. Total: {total} rows.")
     if failures:
