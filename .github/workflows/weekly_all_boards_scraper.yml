@@ -25,27 +25,11 @@ on:
         description: 'Optional prior run ID to reuse artifacts for merge-only recovery'
         required: false
         type: string
-      board:
-        description: 'Run all boards, or just one ATS / LinkedIn / Indeed'
+      boards:
+        description: 'Boards to scrape: "all", or any list separated by commas, e.g. "Greenhouse, Lever, LinkedIn". Choices: Ashby, Greenhouse, Lever, Workday, SmartRecruiters, Workable, iCIMS, Jobvite, BambooHR, Teamtailor, Dice, Adp, LinkedIn, Indeed'
         required: true
         default: all
-        type: choice
-        options:
-          - all
-          - Ashby
-          - Greenhouse
-          - Lever
-          - Workday
-          - SmartRecruiters
-          - Workable
-          - iCIMS
-          - Jobvite
-          - BambooHR
-          - Teamtailor
-          - Dice
-          - Adp
-          - LinkedIn
-          - Indeed
+        type: string
       post_time:
         description: 'Only jobs posted within this window'
         required: true
@@ -76,7 +60,8 @@ permissions:
 
 jobs:
   # 0. Decide what this run does. Scheduled runs use the defaults (everything,
-  #    one-week window, insert into Neon); manual runs can narrow all three.
+  #    one-week window, insert into Neon); manual runs can pick any boards,
+  #    the window and whether to insert.
   plan:
     runs-on: ubuntu-latest
     defaults:
@@ -93,7 +78,7 @@ jobs:
         id: plan
         env:
           EVENT: ${{ github.event_name }}
-          BOARD: ${{ inputs.board || 'all' }}
+          BOARDS: ${{ inputs.boards || 'all' }}
           POST_TIME: ${{ inputs.post_time || 'week' }}
           INSERT_DB: ${{ github.event_name != 'workflow_dispatch' || inputs.insert_to_db }}
           RUN_ATS: ${{ github.event_name != 'workflow_dispatch' || inputs.run_scrape_ats }}
@@ -106,19 +91,24 @@ jobs:
                  "iCIMS", "Jobvite", "BambooHR", "Teamtailor", "Dice", "Adp"]
           LI = ["linkedin", "indeed"]
           env = os.environ
-          board = env["BOARD"]
-          if board == "all":
+          wanted = [b.strip() for b in env["BOARDS"].replace(";", ",").split(",") if b.strip()]
+          everything = not wanted or any(b.lower() == "all" for b in wanted)
+          if everything:
               ats = ATS if env["RUN_ATS"] == "true" else []
               li = LI if env["RUN_LI"] == "true" else []
-          elif board in ATS:
-              ats, li = [board], []
-          else:  # LinkedIn / Indeed
-              ats, li = [], [board.lower()]
+          else:
+              by_name = {b.lower(): b for b in ATS + LI}
+              unknown = [b for b in wanted if b.lower() not in by_name]
+              if unknown:
+                  raise SystemExit(f"Unknown board(s): {', '.join(unknown)}. Choose from: {', '.join(ATS)}, LinkedIn, Indeed")
+              picked = {by_name[b.lower()] for b in wanted}
+              ats = [b for b in ATS if b in picked]
+              li = [b for b in LI if b in picked]
           # Jobs missing from a scrape are only retired after a complete, default
           # scrape: a single board, a short window or reused artifacts would make
           # every job outside it look like it had disappeared.
           full = env["EVENT"] != "workflow_dispatch" or (
-              board == "all" and env["RUN_ATS"] == "true" and env["RUN_LI"] == "true"
+              everything and env["RUN_ATS"] == "true" and env["RUN_LI"] == "true"
               and env["POST_TIME"] == "week" and not env["REUSE"])
           out = {"ats": json.dumps(ats), "li": json.dumps(li), "post_time": env["POST_TIME"],
                  "insert_db": env["INSERT_DB"], "full_run": str(full).lower()}
