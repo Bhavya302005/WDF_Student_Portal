@@ -1,21 +1,13 @@
-name: 🚀 Weekly Ultimate Scraper (All Boards + LI/Indeed)
+name: 🚀 Ultimate Scraper (weekly all boards, daily LinkedIn + Indeed)
 
 on:
   schedule:
     # Run every Sunday at midnight
     - cron: '0 0 * * 0'
+    # Every day: LinkedIn + Indeed, jobs posted in the last 24 hours (see the plan step)
+    - cron: '0 9 * * *'
   workflow_dispatch:
     inputs:
-      run_scrape_ats:
-        description: 'Run ATS scraping stage'
-        required: true
-        default: true
-        type: boolean
-      run_scrape_li_indeed:
-        description: 'Run LinkedIn/Indeed scraping stage'
-        required: true
-        default: true
-        type: boolean
       run_merge:
         description: 'Run merge-and-commit stage'
         required: true
@@ -25,27 +17,76 @@ on:
         description: 'Optional prior run ID to reuse artifacts for merge-only recovery'
         required: false
         type: string
-      board:
-        description: 'Run all boards, or just one ATS / LinkedIn / Indeed'
+      ashby:
+        description: 'Ashby (ATS)'
         required: true
-        default: all
-        type: choice
-        options:
-          - all
-          - Ashby
-          - Greenhouse
-          - Lever
-          - Workday
-          - SmartRecruiters
-          - Workable
-          - iCIMS
-          - Jobvite
-          - BambooHR
-          - Teamtailor
-          - Dice
-          - Adp
-          - LinkedIn
-          - Indeed
+        default: true
+        type: boolean
+      greenhouse:
+        description: 'Greenhouse (ATS)'
+        required: true
+        default: true
+        type: boolean
+      lever:
+        description: 'Lever (ATS)'
+        required: true
+        default: true
+        type: boolean
+      workday:
+        description: 'Workday (ATS)'
+        required: true
+        default: true
+        type: boolean
+      smartrecruiters:
+        description: 'SmartRecruiters (ATS)'
+        required: true
+        default: true
+        type: boolean
+      workable:
+        description: 'Workable (ATS)'
+        required: true
+        default: true
+        type: boolean
+      icims:
+        description: 'iCIMS (ATS)'
+        required: true
+        default: true
+        type: boolean
+      jobvite:
+        description: 'Jobvite (ATS)'
+        required: true
+        default: true
+        type: boolean
+      bamboohr:
+        description: 'BambooHR (ATS)'
+        required: true
+        default: true
+        type: boolean
+      teamtailor:
+        description: 'Teamtailor (ATS)'
+        required: true
+        default: true
+        type: boolean
+      dice:
+        description: 'Dice (ATS)'
+        required: true
+        default: true
+        type: boolean
+      adp:
+        description: 'Adp (ATS)'
+        required: true
+        default: true
+        type: boolean
+      linkedin:
+        description: 'LinkedIn'
+        required: true
+        default: true
+        type: boolean
+      indeed:
+        description: 'Indeed'
+        required: true
+        default: true
+        type: boolean
       post_time:
         description: 'Only jobs posted within this window'
         required: true
@@ -75,8 +116,9 @@ permissions:
   contents: read
 
 jobs:
-  # 0. Decide what this run does. Scheduled runs use the defaults (everything,
-  #    one-week window, insert into Neon); manual runs can narrow all three.
+  # 0. Decide what this run does. Scheduled runs use the defaults (every board,
+  #    one-week window, insert into Neon); manual runs tick the boards to scrape,
+  #    the window and whether to insert.
   plan:
     runs-on: ubuntu-latest
     defaults:
@@ -87,41 +129,46 @@ jobs:
       li: ${{ steps.plan.outputs.li }}
       post_time: ${{ steps.plan.outputs.post_time }}
       insert_db: ${{ steps.plan.outputs.insert_db }}
-      full_run: ${{ steps.plan.outputs.full_run }}
+      expire: ${{ steps.plan.outputs.expire }}
+      expire_boards: ${{ steps.plan.outputs.expire_boards }}
     steps:
       - name: Plan
         id: plan
         env:
           EVENT: ${{ github.event_name }}
-          BOARD: ${{ inputs.board || 'all' }}
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUTS: ${{ toJSON(inputs) }}
           POST_TIME: ${{ inputs.post_time || 'week' }}
           INSERT_DB: ${{ github.event_name != 'workflow_dispatch' || inputs.insert_to_db }}
-          RUN_ATS: ${{ github.event_name != 'workflow_dispatch' || inputs.run_scrape_ats }}
-          RUN_LI: ${{ github.event_name != 'workflow_dispatch' || inputs.run_scrape_li_indeed }}
           REUSE: ${{ inputs.reuse_artifacts_run_id }}
         run: |
           python3 - <<'PY'
           import json, os
           ATS = ["Ashby", "Greenhouse", "Lever", "Workday", "SmartRecruiters", "Workable",
                  "iCIMS", "Jobvite", "BambooHR", "Teamtailor", "Dice", "Adp"]
-          LI = ["linkedin", "indeed"]
+          LI = ["LinkedIn", "Indeed"]
           env = os.environ
-          board = env["BOARD"]
-          if board == "all":
-              ats = ATS if env["RUN_ATS"] == "true" else []
-              li = LI if env["RUN_LI"] == "true" else []
-          elif board in ATS:
-              ats, li = [board], []
-          else:  # LinkedIn / Indeed
-              ats, li = [], [board.lower()]
-          # Jobs missing from a scrape are only retired after a complete, default
-          # scrape: a single board, a short window or reused artifacts would make
-          # every job outside it look like it had disappeared.
-          full = env["EVENT"] != "workflow_dispatch" or (
-              board == "all" and env["RUN_ATS"] == "true" and env["RUN_LI"] == "true"
-              and env["POST_TIME"] == "week" and not env["REUSE"])
-          out = {"ats": json.dumps(ats), "li": json.dumps(li), "post_time": env["POST_TIME"],
-                 "insert_db": env["INSERT_DB"], "full_run": str(full).lower()}
+          inputs = json.loads(env.get("INPUTS") or "null") or {}
+          manual = env["EVENT"] == "workflow_dispatch"
+          # The daily schedule scrapes LinkedIn and Indeed for the last 24 hours: their public searches show
+          # at most ~1,000 jobs each, so a week of postings for a big role does not fit, a day does
+          daily = env.get("SCHEDULE") == "0 9 * * *"
+          if daily:
+              env["POST_TIME"] = "day"
+          # The weekly schedule scrapes every board; manual runs scrape the ticked ones
+          picked = (LI if daily else
+                    [b for b in ATS + LI if not manual or str(inputs.get(b.lower())).lower() == "true"])
+          if not picked:
+              raise SystemExit("No board ticked: tick at least one board to scrape.")
+          # Jobs a run did not see are retired only for the boards it scraped, and not after
+          # a one-day window or reused artifacts (every older job would look gone).
+          expire = env["POST_TIME"] != "day" and not env["REUSE"]
+          out = {"ats": json.dumps([b for b in ATS if b in picked]),
+                 "li": json.dumps([b.lower() for b in LI if b in picked]),
+                 "post_time": env["POST_TIME"], "insert_db": env["INSERT_DB"],
+                 "expire": str(expire).lower(),
+                 # Empty = every board (scheduled runs and all-ticked runs)
+                 "expire_boards": "" if len(picked) == len(ATS + LI) else ",".join(picked)}
           with open(env["GITHUB_OUTPUT"], "a") as handle:
               for key, value in out.items():
                   handle.write(f"{key}={value}\n")
@@ -503,16 +550,23 @@ jobs:
                   print(f'Skip {f}: {e}')
 
           print(f'Total jobs to upsert: {len(all_jobs)}')
-          n = save_jobs(all_jobs, expire_missing=os.environ.get('EXPIRE_MISSING') == 'true')
+          boards = [b for b in os.environ.get('EXPIRE_BOARDS', '').split(',') if b]
+          n = save_jobs(all_jobs, expire_missing=os.environ.get('EXPIRE_MISSING') == 'true',
+                        expire_boards=boards or None)
           print(f'Neon upsert complete: {n} rows')
           "
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-          # Only a complete default scrape may retire jobs it did not see (see plan).
-          EXPIRE_MISSING: ${{ needs.plan.outputs.full_run }}
+          # More room for jobs: new jobs go to whichever database has most free space (empty = main only)
+          JOBS_DATABASE_URL_2: ${{ secrets.JOBS_DATABASE_URL_2 }}
+          # Jobs this run's boards no longer list are retired (see plan).
+          EXPIRE_MISSING: ${{ needs.plan.outputs.expire }}
+          EXPIRE_BOARDS: ${{ needs.plan.outputs.expire_boards }}
           # Storage: before inserting, remove the stalest jobs so the new ones fit (see db/neon_upsert.py).
-          # Set the repository variable JOBS_DB_MAX_MB to the Neon project's storage limit to turn it on.
-          JOBS_DB_MAX_MB: ${{ vars.JOBS_DB_MAX_MB }}
+          # Each Neon project's storage limit (repository variable JOBS_DB_MAX_MB, default 1 GB;
+          # JOBS_DB_MAX_MB_2 for the second database if it differs).
+          JOBS_DB_MAX_MB: ${{ vars.JOBS_DB_MAX_MB || '1024' }}
+          JOBS_DB_MAX_MB_2: ${{ vars.JOBS_DB_MAX_MB_2 }}
           JOB_EXPIRE_DAYS: ${{ vars.JOB_EXPIRE_DAYS || '14' }}
           JOB_PURGE_EXPIRED_DAYS: ${{ vars.JOB_PURGE_EXPIRED_DAYS || '7' }}
           JOB_RETENTION_DRY_RUN: ${{ inputs.retention_dry_run || 'false' }}

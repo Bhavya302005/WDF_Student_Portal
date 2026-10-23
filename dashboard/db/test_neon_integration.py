@@ -70,6 +70,32 @@ class SaveJobsIntegrationTests(unittest.TestCase):
     def table_bytes(self) -> int:
         return self.query("SELECT pg_total_relation_size('public.jobs')")[0][0]
 
+    def test_a_rescrape_without_the_description_keeps_what_was_read_from_it(self) -> None:
+        full = {"id": "wd-1", "job_title": "Buyer", "source_board": "Workday", "work_mode": "Hybrid",
+                "description": "Pay range: $80,000 - $95,000 per year. 5+ years of SAP experience required.",
+                "salary_min": 80000, "salary_max": 95000, "salary_currency": "USD", "salary_period": "year",
+                "experience_min": 5, "skills_required": ["SAP"], "location": "Austin, TX"}
+        self.module.save_jobs([full], vacuum_every=10**9)
+        before = self.query("SELECT updated_at FROM public.jobs WHERE id = 'wd-1'")[0][0]
+        # Next week the list page only: no description, no salary, no work mode, a new location.
+        thin = {"id": "wd-1", "job_title": "Buyer", "source_board": "Workday", "location": "Austin, Texas"}
+        self.module.save_jobs([thin], vacuum_every=10**9)
+        row = self.query("SELECT description, salary_min, experience_min, skills_required::text, work_mode, location, updated_at "
+                         "FROM public.jobs WHERE id = 'wd-1'")[0]
+        self.assertTrue(row[0].startswith("Pay range"))
+        self.assertEqual((float(row[1]), float(row[2]), row[4]), (80000.0, 5.0, "hybrid"))
+        self.assertIn("SAP", row[3])
+        self.assertEqual(row[5], "Austin, Texas")       # list-page fields still update
+        self.assertGreater(row[6], before)              # and the change is recorded
+        # Seen again unchanged: nothing to update.
+        self.module.save_jobs([thin], vacuum_every=10**9)
+        self.assertEqual(self.query("SELECT updated_at FROM public.jobs WHERE id = 'wd-1'")[0][0], row[6])
+        # A full row with a new description replaces everything, including clearing the salary.
+        self.module.save_jobs([{**full, "description": "Updated posting, no pay stated.", "salary_min": None, "salary_max": None}],
+                              vacuum_every=10**9)
+        self.assertEqual(self.query("SELECT description, salary_min FROM public.jobs WHERE id = 'wd-1'")[0],
+                         ("Updated posting, no pay stated.", None))
+
     def test_posted_date_only_moves_back(self) -> None:
         job = {"id": "gh-1", "job_title": "Buyer", "source_board": "Greenhouse", "description": "x"}
         self.module.save_jobs([{**job, "posted_at": "2026-09-09T08:00:00+00:00"}], vacuum_every=10**9)
@@ -196,11 +222,119 @@ class SaveJobsIntegrationTests(unittest.TestCase):
         self.module.save_jobs(self.jobs(1, "text"), expire_missing=True)
         self.assertEqual(self.query("SELECT count(*) FROM public.jobs WHERE status = 'expired'")[0][0], 0)
 
+    def test_a_run_of_some_boards_only_expires_jobs_of_those_boards(self) -> None:
+        jobs = self.jobs(6, "text")
+        for job in jobs:
+            job["source_board"] = "Greenhouse" if job["id"] < "job-3" else "linkedin"
+        self.module.save_jobs(jobs)
+        self.execute("UPDATE public.jobs SET last_seen_at = now() - interval '30 days' WHERE id IN ('job-2', 'job-5')")
+        with mock.patch.dict(os.environ, {"JOB_PURGE_EXPIRED_DAYS": ""}):
+            self.module.save_jobs(jobs[:2], expire_missing=True, expire_boards=["Greenhouse"])
+        status = dict(self.query("SELECT id, status FROM public.jobs"))
+        self.assertEqual(status["job-2"], "expired")   # Greenhouse was scraped and no longer lists it
+        self.assertEqual(status["job-5"], "active")    # LinkedIn was not scraped in this run
+
     def test_reappearing_expired_job_is_reactivated(self) -> None:
         self.module.save_jobs(self.jobs(1, "text"))
         self.execute("UPDATE public.jobs SET status = 'expired'")
         self.module.save_jobs(self.jobs(1, "text"))
         self.assertEqual(self.query("SELECT status FROM public.jobs")[0][0], "active")
+
+
+URL_2 = os.getenv("TEST_DATABASE_URL_2", "")
+
+
+@unittest.skipUnless(URL and URL_2, "TEST_DATABASE_URL and TEST_DATABASE_URL_2 not set")
+class SecondJobsDatabaseTests(unittest.TestCase):
+    """JOBS_DATABASE_URL_2: more room for jobs; users' saved and applied jobs stay in the main database."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if "neon.tech" in URL + URL_2:
+            raise unittest.SkipTest("refusing to run destructive tests against Neon")
+        import psycopg
+        cls.psycopg = psycopg
+        from db import neon_upsert
+        cls.module = neon_upsert
+
+    def setUp(self) -> None:
+        with self.psycopg.connect(URL, autocommit=True) as conn:
+            conn.execute(SCHEMA)  # with the foreign key: the first two-database run drops it
+        with self.psycopg.connect(URL_2, autocommit=True) as conn:
+            conn.execute("DROP TABLE IF EXISTS public.jobs")  # save_jobs creates it
+        self.env = mock.patch.dict(os.environ, {"NEON_DATABASE_URL": URL, "JOBS_DATABASE_URL_2": URL_2}, clear=False)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def query(self, url: str, sql: str, *params):
+        with self.psycopg.connect(url) as conn:
+            return conn.execute(sql, params).fetchall()
+
+    def execute(self, url: str, sql: str, *params) -> None:
+        with self.psycopg.connect(url, autocommit=True) as conn:
+            conn.execute(sql, params)
+
+    def ids(self, url: str) -> set[str]:
+        return {row[0] for row in self.query(url, "SELECT id FROM public.jobs")}
+
+    @staticmethod
+    def jobs(names) -> list[dict]:
+        return [{"id": name, "job_title": f"Buyer {name}", "source_board": board, "description": "text"}
+                for name, board in ((name, ("Greenhouse", "LinkedIn", "Indeed", "Workday")[i % 4])
+                                    for i, name in enumerate(names))]
+
+    def full_main_database(self) -> dict:
+        """Limits under which the main database has no room left and the second one has plenty."""
+        mb = self.query(URL, "SELECT pg_database_size(current_database())")[0][0] / 2**20
+        return {"JOBS_DB_MAX_MB_1": str(mb / 0.92), "JOBS_DB_MAX_MB_2": str(mb * 4)}
+
+    def test_new_jobs_from_every_board_go_to_the_database_with_room(self) -> None:
+        self.module.save_jobs(self.jobs([f"old-{i}" for i in range(20)]))
+        self.assertEqual(len(self.ids(URL)) + len(self.ids(URL_2)), 20)
+        with mock.patch.dict(os.environ, self.full_main_database()):
+            old = self.ids(URL), self.ids(URL_2)
+            self.module.save_jobs(self.jobs([f"old-{i}" for i in range(20)] + [f"new-{i}" for i in range(40)]))
+        main, second = self.ids(URL), self.ids(URL_2)
+        self.assertTrue(old[0] <= main and old[1] <= second)                # stored jobs stay where they are
+        self.assertEqual({i for i in second | main if i.startswith("new-")}, {f"new-{i}" for i in range(40)})
+        self.assertFalse(any(i.startswith("new-") for i in main))           # the full database gets none
+        boards = {row[0] for row in self.query(URL_2, "SELECT DISTINCT source_board FROM public.jobs")}
+        self.assertEqual(boards, {"Greenhouse", "LinkedIn", "Indeed", "Workday"})
+        self.assertFalse(main & second)                                     # each job is stored once
+
+    def test_second_database_expires_and_purges_but_keeps_jobs_saved_in_the_main_one(self) -> None:
+        with mock.patch.dict(os.environ, self.full_main_database()):
+            self.module.save_jobs(self.jobs([f"job-{i}" for i in range(10)]))
+        self.assertEqual(len(self.ids(URL_2)), 10)
+        self.execute(URL_2, "UPDATE public.jobs SET last_seen_at = now() - interval '30 days' "
+                            "WHERE id IN ('job-7', 'job-8', 'job-9')")
+        self.execute(URL, "INSERT INTO public.user_job_recommendations VALUES "
+                          "('00000000-0000-0000-0000-000000000001', 'job-9', 'saved'), "
+                          "('00000000-0000-0000-0000-000000000001', 'job-8', 'recommended')")
+        with mock.patch.dict(os.environ, {"JOB_PURGE_EXPIRED_DAYS": "0"}):
+            self.module.save_jobs(self.jobs([f"job-{i}" for i in range(7)]), expire_missing=True)
+        statuses = dict(self.query(URL_2, "SELECT id, status FROM public.jobs"))
+        self.assertNotIn("job-7", statuses)
+        self.assertNotIn("job-8", statuses)
+        self.assertEqual(statuses["job-9"], "expired")                     # saved: kept
+        # A removed job's recommendation goes with it, as the foreign key used to do
+        self.assertEqual(self.query(URL, "SELECT job_id FROM public.user_job_recommendations"), [("job-9",)])
+
+    def test_storage_budget_trims_each_database_under_its_own_limit(self) -> None:
+        with mock.patch.dict(os.environ, self.full_main_database()):
+            self.module.save_jobs(self.jobs([f"job-{i}" for i in range(50)]))
+        self.execute(URL_2, "UPDATE public.jobs SET last_seen_at = now() - interval '60 days' WHERE id <> 'job-0'")
+        self.execute(URL, "INSERT INTO public.user_job_recommendations VALUES "
+                          "('00000000-0000-0000-0000-000000000001', 'job-1', 'applied')")
+        mb = self.query(URL_2, "SELECT pg_database_size(current_database())")[0][0] / 2**20
+        limits = {"JOBS_DB_MAX_MB_1": "0.001", "JOBS_DB_MAX_MB_2": str(mb / 0.92),
+                  "JOB_RETENTION_MAX_DELETE_PCT": "20"}
+        with mock.patch.dict(os.environ, limits):
+            self.module.save_jobs(self.jobs(["job-0"] + [f"new-{i}" for i in range(10)]))
+        kept = self.ids(URL_2)
+        self.assertIn("job-1", kept)                                        # applied in the main database
+        self.assertIn("job-0", kept)                                        # seen in this run
+        self.assertTrue(40 <= len(kept) <= 60, len(kept))
 
 
 if __name__ == "__main__":
