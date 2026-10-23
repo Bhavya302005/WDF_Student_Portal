@@ -1,9 +1,11 @@
-name: 🚀 Weekly Ultimate Scraper (All Boards + LI/Indeed)
+name: 🚀 Ultimate Scraper (weekly all boards, daily LinkedIn + Indeed)
 
 on:
   schedule:
     # Run every Sunday at midnight
     - cron: '0 0 * * 0'
+    # Every day: LinkedIn + Indeed, jobs posted in the last 24 hours (see the plan step)
+    - cron: '0 9 * * *'
   workflow_dispatch:
     inputs:
       run_merge:
@@ -134,6 +136,7 @@ jobs:
         id: plan
         env:
           EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
           INPUTS: ${{ toJSON(inputs) }}
           POST_TIME: ${{ inputs.post_time || 'week' }}
           INSERT_DB: ${{ github.event_name != 'workflow_dispatch' || inputs.insert_to_db }}
@@ -147,8 +150,14 @@ jobs:
           env = os.environ
           inputs = json.loads(env.get("INPUTS") or "null") or {}
           manual = env["EVENT"] == "workflow_dispatch"
-          # Scheduled runs scrape every board; manual runs scrape the ticked ones
-          picked = [b for b in ATS + LI if not manual or str(inputs.get(b.lower())).lower() == "true"]
+          # The daily schedule scrapes LinkedIn and Indeed for the last 24 hours: their public searches show
+          # at most ~1,000 jobs each, so a week of postings for a big role does not fit, a day does
+          daily = env.get("SCHEDULE") == "0 9 * * *"
+          if daily:
+              env["POST_TIME"] = "day"
+          # The weekly schedule scrapes every board; manual runs scrape the ticked ones
+          picked = (LI if daily else
+                    [b for b in ATS + LI if not manual or str(inputs.get(b.lower())).lower() == "true"])
           if not picked:
               raise SystemExit("No board ticked: tick at least one board to scrape.")
           # Jobs a run did not see are retired only for the boards it scraped, and not after

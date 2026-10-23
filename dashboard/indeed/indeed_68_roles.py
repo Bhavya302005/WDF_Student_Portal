@@ -552,6 +552,7 @@ def scrape_role(
     seen_urls: set[str] = set()
     offset = 0
     stats = {"batches": 0, "hit_429": False}
+    batches_without_new = 0
 
     while offset < max_results:
         # Polite delay between pages
@@ -620,6 +621,7 @@ def scrape_role(
         stats["batches"] += 1
         batch_len = len(batch_df)
         new_in_batch = 0
+        listed_new = sum(1 for url in batch_df["job_url"] if str(url or "").strip() not in seen_urls)
 
         for _, row in batch_df.iterrows():
             url = str(row.get("job_url") or "").strip()
@@ -705,9 +707,11 @@ def scrape_role(
             page_new = all_jobs[-new_in_batch:]
             all_jobs[-new_in_batch:] = enrich_jobs_after_details(page_new)
 
-        # Short page = last page
-        if batch_len < BATCH_SIZE:
-            log.info(f"    Short page ({batch_len} < {BATCH_SIZE}) — last page.")
+        # The end is an empty batch (above), not a short one: a throttled batch comes back short with more
+        # results still to come. Two batches in a row with nothing new also mean the end.
+        batches_without_new = batches_without_new + 1 if listed_new == 0 else 0
+        if batches_without_new >= 2:
+            log.info("    Only repeats in the last two batches: end of results.")
             break
 
         offset += BATCH_SIZE

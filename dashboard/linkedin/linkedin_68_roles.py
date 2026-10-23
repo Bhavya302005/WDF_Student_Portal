@@ -638,6 +638,9 @@ def _parse_linkedin_detail_html(page_html: str) -> dict[str, Any]:
     return {key: value for key, value in details.items() if value not in (None, "", [], {})}
 
 
+from linkedin_guest_search import LIMIT as GUEST_LIMIT, WORK_TYPES, search_batch  # noqa: E402
+
+
 def _fetch_one_job_details(url: str) -> dict[str, Any]:
     """Fetch and parse one LinkedIn detail page; return an empty dict on failure."""
     try:
@@ -806,6 +809,19 @@ def upsert_to_supabase(jobs: list[dict]) -> None:
 
 # -- Core: scrape one role ----------------------------------------------------
 
+# Words that only say how senior a role is ("Senior Buyer" is still a buyer)
+_LEVEL_WORDS = {"senior", "sr", "junior", "jr", "assistant", "associate", "lead", "head", "of", "global", "strategic",
+                "principal", "staff", "chief", "i", "ii", "iii", "the", "and", "&"}
+
+
+def title_matches_role(role: str, title: str) -> bool:
+    """Whether a job title is this role: every main word of the role is in it ("Buyer" / "Senior Buyer II")."""
+    words = [w for w in re.findall(r"[a-z]+", role.lower()) if w not in _LEVEL_WORDS] or re.findall(r"[a-z]+", role.lower())
+    title_words = set(re.findall(r"[a-z]+", title.lower()))
+    stems = {w[:-1] if w.endswith("s") else w for w in title_words} | title_words
+    return all(w in stems or (w.endswith("ing") and w[:-3] in stems) for w in words)
+
+
 def scrape_role(
     role: str,
     location: str,
@@ -815,17 +831,21 @@ def scrape_role(
     max_results: int = 999999,
     base_delay_sec: float = BASE_DELAY_SEC,
     desc_workers: int = DESC_WORKERS,
+    work_type: str | None = None,
 ) -> tuple[list[dict], dict]:
     """
-    Scrape LinkedIn for one role title.
-    Returns (job_list, stats)  where stats = {batches, hit_429}
+    Scrape LinkedIn for one role title (optionally one work type: 1 on-site, 2 remote, 3 hybrid).
+    Returns (job_list, stats)  where stats = {batches, hit_429, found, capped}: found is the number of
+    distinct jobs LinkedIn listed for the search, capped whether it stopped at LinkedIn's ~1,000 limit.
     """
-    log.info(f"  Role: '{role}'")
+    log.info(f"  Role: '{role}'" + (f" ({WORK_TYPES[work_type]})" if work_type else ""))
 
     all_jobs: list[dict] = []
     seen_urls: set[str] = set()
     offset = 0
-    stats = {"batches": 0, "hit_429": False}
+    stats = {"batches": 0, "hit_429": False, "found": 0, "capped": False}
+    batches_without_new = 0
+    batches_without_match = 0
 
     while offset < max_results:
         # Polite delay between pages
@@ -842,20 +862,8 @@ def scrape_role(
         while attempt < MAX_RETRIES:
             try:
                 log.info(f"    offset={offset} (attempt {attempt + 1}/{MAX_RETRIES})")
-                kwargs: dict[str, Any] = {
-                    "site_name":                ["linkedin"],
-                    "search_term":              role,
-                    "location":                 location,
-                    "results_wanted":           BATCH_SIZE,
-                    "offset":                   offset,
-                    # Always False here — we fetch descriptions in parallel below
-                    "linkedin_fetch_description": False,
-                    "verbose":                  0,
-                }
-                if hours_old is not None:
-                    kwargs["hours_old"] = hours_old
-
-                batch_df = scrape_jobs(**kwargs)
+                # LinkedIn's public search, 10 per request (descriptions are fetched in parallel below)
+                batch_df = search_batch(role, location, hours_old, offset, BATCH_SIZE, work_type)
                 break  # success
 
             except Exception as exc:
@@ -895,6 +903,11 @@ def scrape_role(
         stats["batches"] += 1
         batch_len = len(batch_df)
         new_in_batch = 0
+        # Jobs this search had not listed yet (before the cross-role dedup): LinkedIn repeats results near its limit
+        listed_new = sum(1 for url in batch_df["job_url"] if str(url or "").strip() not in seen_urls)
+        stats["found"] += listed_new
+        # LinkedIn's search is loose and ranks real matches first: titles of this role thin out as it goes
+        title_matches = sum(title_matches_role(role, str(title or "")) for title in batch_df.get("title", []))
 
         for _, row in batch_df.iterrows():
             url = str(row.get("job_url") or "").strip()
@@ -993,9 +1006,19 @@ def scrape_role(
             page_new = all_jobs[-new_in_batch:]
             all_jobs[-new_in_batch:] = enrich_jobs_after_details(page_new)
 
-        # Short page = last page (LinkedIn signals end of results this way)
-        if batch_len < BATCH_SIZE:
-            log.info(f"    Short page ({batch_len} < {BATCH_SIZE}) — last page.")
+        # The end is an empty page or LinkedIn's limit, not a short batch: a throttled or partly repeated
+        # batch can be short with many results still to come
+        batches_without_new = batches_without_new + 1 if listed_new == 0 else 0
+        if batch_df.attrs.get("end"):
+            stats["capped"] = offset + BATCH_SIZE >= GUEST_LIMIT
+            log.info("    Reached LinkedIn's result limit." if stats["capped"] else "    End of results.")
+            break
+        if batches_without_new >= 2:
+            log.info("    Only repeats in the last two batches: end of results.")
+            break
+        batches_without_match = batches_without_match + 1 if title_matches == 0 else 0
+        if batches_without_match >= 2:
+            log.info(f"    No '{role}' titles in the last two batches: the rest is loosely related, stopping.")
             break
 
         offset += BATCH_SIZE
@@ -1161,6 +1184,7 @@ def main() -> None:
             return
 
     run_jobs:       list[dict] = []
+    coverage:       list[tuple] = []  # (role, jobs LinkedIn listed, new jobs kept, note)
     hot_remaining:  int        = 0
     prev_was_heavy: bool       = False
     scraped_any:    bool       = False
@@ -1195,13 +1219,30 @@ def main() -> None:
                 base_delay_sec=base_delay,
                 desc_workers=DESC_WORKERS,
             )
+            capped_parts = []
+            if stats["capped"]:
+                # LinkedIn shows at most ~1,000 jobs per search: search each work type separately
+                log.info(f"  '{role}' reached LinkedIn's limit: searching on-site, remote and hybrid separately")
+                for work_type in WORK_TYPES:
+                    more, part = scrape_role(
+                        role=role, location=args.location, hours_old=hours_old, global_seen_ids=global_seen_ids,
+                        fetch_description=fetch_description, max_results=max_results, base_delay_sec=base_delay,
+                        desc_workers=DESC_WORKERS, work_type=work_type)
+                    jobs += more
+                    stats["found"] += part["found"]
+                    stats["hit_429"] = stats["hit_429"] or part["hit_429"]
+                    if part["capped"]:
+                        capped_parts.append(WORK_TYPES[work_type])
+            coverage.append((role, stats["found"], len(jobs), "still capped: " + ", ".join(capped_parts)
+                             if capped_parts else ("split by work type" if stats["capped"] else "complete")))
         except KeyboardInterrupt:
             log.warning("\nInterrupted — saving state...")
             _flush(state, completed, grand_total, global_seen_ids, run_jobs, use_supabase)
             return
         except Exception as exc:
             log.error(f"Unexpected error on '{role}': {exc}", exc_info=True)
-            jobs, stats = [], {"batches": 0, "hit_429": False}
+            jobs, stats = [], {"batches": 0, "hit_429": False, "found": 0, "capped": False}
+            coverage.append((role, 0, 0, f"error: {exc}"[:80]))
 
         scraped_any    = True
         prev_was_heavy = stats["batches"] > 1
@@ -1242,6 +1283,25 @@ def main() -> None:
     log.info(f"  1. Master CSV     : {CSV_FILE}")
     log.info(f"  2. Strict CSV     : {CSV_STRICT_FILE}")
     log.info("=" * 65)
+    write_coverage(coverage, args.post_time)
+
+
+def write_coverage(coverage: list[tuple], post_time: str) -> None:
+    """Per role: how many jobs LinkedIn listed and whether the search was complete (log + Actions summary)."""
+    if not coverage:
+        return
+    capped = [row for row in coverage if row[3].startswith("still capped")]
+    lines = [f"### LinkedIn coverage ({post_time} window)", "",
+             f"{len(coverage)} roles, {sum(row[1] for row in coverage)} jobs listed, "
+             f"{sum(row[2] for row in coverage)} new kept, {len(capped)} roles still at LinkedIn's limit", "",
+             "| Role | Listed | New | Coverage |", "|---|---|---|---|"]
+    lines += [f"| {role} | {listed} | {kept} | {note} |" for role, listed, kept, note in coverage]
+    for role, listed, kept, note in coverage:
+        log.info(f"  coverage: {role}: {listed} listed, {kept} new, {note}")
+    summary = os.getenv("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n\n")
 
 
 def _flush(
