@@ -414,6 +414,7 @@ _DETAIL_FIELDS = (
     "skills", "education_requirements",
     "basic_qualifications", "preferred_qualifications", "key_responsibilities",
     "job_function", "company_industry",
+    "poster_name", "poster_title", "poster_url",
 )
 
 
@@ -621,6 +622,17 @@ def _parse_linkedin_detail_html(page_html: str) -> dict[str, Any]:
                     details.update(work_mode="hybrid", is_remote=False)
                 elif "onsite" in mode or "on site" in value.lower():
                     details.update(work_mode="onsite", is_remote=False)
+
+        # "Direct message the job poster from <company>": the person who posted it (on some jobs' public page)
+        poster = soup.select_one(".message-the-recruiter")
+        if poster:
+            name = poster.select_one(".base-main-card__title")
+            title = poster.select_one(".base-main-card__subtitle")
+            link = poster.select_one("a.base-card__full-link[href]")
+            if name and name.get_text(strip=True):
+                details["poster_name"] = name.get_text(" ", strip=True)
+                details["poster_title"] = title.get_text(" ", strip=True) if title else ""
+                details["poster_url"] = (link["href"].split("?")[0] if link else "")
 
         apply_code = soup.find("code", id="applyUrl")
         if apply_code:

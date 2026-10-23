@@ -52,6 +52,9 @@ COLUMNS = (
     "posted_at", "source_board",
     "basic_qualifications", "preferred_qualifications", "key_responsibilities",
     "extraction", "job_url", "apply_url",
+    # LinkedIn: whether the job is a repost and when it was first posted (linkedin_reposts.py), and the
+    # person who posted it ("Meet the hiring team", read from the public job page)
+    "reposted", "first_posted_at", "poster_name", "poster_title", "poster_url",
 )
 
 # Assigning EXCLUDED.<col> writes a fresh TOAST copy even when the text is
@@ -80,6 +83,13 @@ def _new_value(column: str) -> str:
         # (Greenhouse updated_at), and an edit must not make an old job look new.
         # LEAST ignores NULL, so a newly found date still fills an empty one.
         return "LEAST(jobs.posted_at, EXCLUDED.posted_at)"
+    if column == "first_posted_at":
+        return "LEAST(jobs.first_posted_at, EXCLUDED.first_posted_at)"
+    if column == "reposted":
+        return "coalesce(EXCLUDED.reposted, jobs.reposted)"
+    if column.startswith("poster_"):
+        # A page fetched without its hiring team (or a non-LinkedIn row) keeps the poster found before
+        return f"coalesce(nullif(EXCLUDED.{column}, ''), jobs.{column})"
     if column in DESCRIPTION_COLUMNS:
         return f"CASE WHEN {_THIN} THEN jobs.{column} ELSE EXCLUDED.{column} END"
     if column in _FILL_COLUMNS:
@@ -110,7 +120,10 @@ UPSERT_SQL = (
 )
 
 # Idempotent and metadata-only (no table rewrite) on PostgreSQL 11+.
-MIGRATION_SQL = "ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS last_seen_at timestamptz"
+MIGRATION_SQL = """ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS last_seen_at timestamptz,
+  ADD COLUMN IF NOT EXISTS reposted boolean, ADD COLUMN IF NOT EXISTS first_posted_at timestamptz,
+  ADD COLUMN IF NOT EXISTS poster_name text, ADD COLUMN IF NOT EXISTS poster_title text,
+  ADD COLUMN IF NOT EXISTS poster_url text"""
 
 # Soft expiry only: a job that reappears is reactivated by the next upsert. A run that scraped
 # only some boards (boards = their lower-cased names) only retires jobs of those boards.
@@ -659,6 +672,11 @@ def map_job(raw: dict) -> dict:
         "extraction":              Jsonb(extraction) if extraction is not None else None,
         "job_url":                 _text(job.get("job_url") or job.get("url") or job.get("link")),
         "apply_url":               _text(job.get("apply_url") or job.get("apply_link")),
+        "reposted":                job.get("reposted") if isinstance(job.get("reposted"), bool) else None,
+        "first_posted_at":         _parse_posted_at(job.get("first_posted_at")),
+        "poster_name":             _text(job.get("poster_name")),
+        "poster_title":            _text(job.get("poster_title")),
+        "poster_url":              _text(job.get("poster_url")),
     }
 
 
@@ -747,6 +765,7 @@ def save_jobs(jobs: list[dict], batch_size: int = 500, *, expire_missing: bool =
         if row["job_title"]:  # job_title is the only required content field
             seen[row["id"]] = row
     unique_rows = list(seen.values())
+    _mark_linkedin_reposts(unique_rows, urls[0])
 
     log.info(f"Upserting {len(unique_rows)} unique jobs to Neon public.jobs "
              f"({len(urls)} database{'s' if len(urls) > 1 else ''}) ...")
@@ -770,6 +789,27 @@ def save_jobs(jobs: list[dict], batch_size: int = 500, *, expire_missing: bool =
         raise RuntimeError(f"{len(failures)} of {-(-len(unique_rows) // batch_size)} batches failed "
                            f"({total}/{len(unique_rows)} rows written). First: {failures[0]}")
     return total
+
+
+def _mark_linkedin_reposts(rows: list[dict], main_url: str) -> None:
+    """Fresh or reposted for LinkedIn jobs, from their ids (linkedin_reposts.py); learns today's ids."""
+    linkedin = [row for row in rows if (row.get("source_board") or "").lower() == "linkedin"]
+    if not linkedin:
+        return
+    try:
+        from db import linkedin_reposts
+    except ImportError:
+        import linkedin_reposts  # run from inside db/
+    try:
+        with psycopg.connect(main_url) as conn:
+            calibration = linkedin_reposts.load(conn)
+            reposts = linkedin_reposts.annotate(linkedin, calibration)
+            linkedin_reposts.learn(conn, linkedin_reposts.todays_points(linkedin))
+            conn.commit()
+        log.info(f"LinkedIn: {reposts} of {len(linkedin)} jobs are reposts")
+        _summary(f"- LinkedIn reposts: {reposts} of {len(linkedin)} jobs were first posted earlier")
+    except Exception as exc:  # the flag is extra information; never block saving jobs on it
+        log.warning(f"  Repost check skipped: {exc}")
 
 
 def _forget_recommendations(main_url: str, removed: list[str]) -> None:

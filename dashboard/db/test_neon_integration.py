@@ -234,6 +234,22 @@ class SaveJobsIntegrationTests(unittest.TestCase):
         self.assertEqual(status["job-2"], "expired")   # Greenhouse was scraped and no longer lists it
         self.assertEqual(status["job-5"], "active")    # LinkedIn was not scraped in this run
 
+    def test_linkedin_reposts_and_job_posters(self) -> None:
+        from datetime import date
+        today = date.today().isoformat()
+        jobs = [{"id": "li-old", "job_title": "Buyer", "source_board": "LinkedIn", "posted_at": today,
+                 "job_url": "https://www.linkedin.com/jobs/view/4448494515", "description": "x",
+                 "poster_name": "Doug Moebus", "poster_title": "Talent Acquisition", "poster_url": "https://www.linkedin.com/in/dmoebus"},
+                {"id": "li-new", "job_title": "Buyer", "source_board": "LinkedIn", "posted_at": today,
+                 "job_url": "https://www.linkedin.com/jobs/view/4499999999", "description": "x"}]
+        self.module.save_jobs(jobs)
+        rows = {r[0]: r[1:] for r in self.query("SELECT id, reposted, first_posted_at::date::text, poster_name FROM public.jobs")}
+        self.assertEqual((True, "2026-08-07", "Doug Moebus"), rows["li-old"])  # an August id listed today
+        self.assertEqual(False, rows["li-new"][0])
+        # Seen again without the hiring team on its page: the poster stays
+        self.module.save_jobs([{**jobs[0], "poster_name": "", "poster_title": "", "poster_url": ""}])
+        self.assertEqual("Doug Moebus", self.query("SELECT poster_name FROM public.jobs WHERE id = 'li-old'")[0][0])
+
     def test_reappearing_expired_job_is_reactivated(self) -> None:
         self.module.save_jobs(self.jobs(1, "text"))
         self.execute("UPDATE public.jobs SET status = 'expired'")
