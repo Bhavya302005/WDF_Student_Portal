@@ -207,7 +207,20 @@ ROLE_COOLDOWN_MAX    = 30     # max sleep between roles (normal)
 HOT_COOLDOWN_MIN     = 90     # min sleep after a 429 event
 HOT_COOLDOWN_MAX     = 150    # max sleep after a 429 event
 HOT_STREAK_ROLES     = 4      # roles to stay on hot cooldown after a 429
-BACKOFF_429_SEC      = 360    # hard 6-min pause on 429 detection (longer than Indeed)
+BACKOFF_429_SEC      = 360    # (kept for the Indeed-style callers) see BACKOFF_429_STEPS
+# LinkedIn's rate-limit windows on shared GitHub runners last a few minutes; waiting a long time after
+# the first 429 only burns the job's time, so the waits grow: 45 s, 90 s, 180 s, then the role is left for later
+BACKOFF_429_STEPS    = (45, 90, 180)
+PARTIAL_EXIT_CODE    = 3      # exit code of a shard that saved its jobs but could not collect every role
+MAX_BLOCKED_ROLES    = 3      # roles in a row left blocked: LinkedIn is refusing this runner, stop the shard
+RETRY_BLOCKED_AFTER  = 480    # seconds to wait before trying the blocked roles once more
+TIME_BUDGET_MIN      = float(os.getenv("LINKEDIN_TIME_BUDGET_MIN", "0") or 0)  # 0 = no limit
+
+_deadline: float | None = None  # time.monotonic() value after which the run saves what it has and stops
+
+
+def out_of_time(margin: float = 0.0) -> bool:
+    return _deadline is not None and time.monotonic() + margin >= _deadline
 
 # -- Parallel description fetching --------------------------------------------
 DESC_WORKERS         = 8      # LinkedIn throttles aggressive detail-page bursts
@@ -414,6 +427,7 @@ _DETAIL_FIELDS = (
     "skills", "education_requirements",
     "basic_qualifications", "preferred_qualifications", "key_responsibilities",
     "job_function", "company_industry",
+    "poster_name", "poster_title", "poster_url",
 )
 
 
@@ -621,6 +635,17 @@ def _parse_linkedin_detail_html(page_html: str) -> dict[str, Any]:
                     details.update(work_mode="hybrid", is_remote=False)
                 elif "onsite" in mode or "on site" in value.lower():
                     details.update(work_mode="onsite", is_remote=False)
+
+        # "Direct message the job poster from <company>": the person who posted it (on some jobs' public page)
+        poster = soup.select_one(".message-the-recruiter")
+        if poster:
+            name = poster.select_one(".base-main-card__title")
+            title = poster.select_one(".base-main-card__subtitle")
+            link = poster.select_one("a.base-card__full-link[href]")
+            if name and name.get_text(strip=True):
+                details["poster_name"] = name.get_text(" ", strip=True)
+                details["poster_title"] = title.get_text(" ", strip=True) if title else ""
+                details["poster_url"] = (link["href"].split("?")[0] if link else "")
 
         apply_code = soup.find("code", id="applyUrl")
         if apply_code:
@@ -843,11 +868,15 @@ def scrape_role(
     all_jobs: list[dict] = []
     seen_urls: set[str] = set()
     offset = 0
-    stats = {"batches": 0, "hit_429": False, "found": 0, "capped": False}
+    stats = {"batches": 0, "hit_429": False, "found": 0, "capped": False, "blocked": False}
     batches_without_new = 0
     batches_without_match = 0
 
     while offset < max_results:
+        if out_of_time():
+            log.warning("    Time budget used up: keeping what this role has so far.")
+            stats["blocked"] = stats["blocked"] or stats["batches"] == 0
+            break
         # Polite delay between pages
         if offset > 0:
             delay = base_delay_sec + random.uniform(1.0, 3.0)
@@ -872,17 +901,19 @@ def scrape_role(
                 if any(t in err for t in ("429", "too many", "rate limit", "ratelimit", "captcha")):
                     stats["hit_429"] = True
                     pauses_429 += 1
-                    if pauses_429 > MAX_429_PAUSES:
+                    wait = BACKOFF_429_STEPS[min(pauses_429, len(BACKOFF_429_STEPS)) - 1] + random.uniform(0, 15)
+                    if pauses_429 > len(BACKOFF_429_STEPS) or out_of_time(wait):
                         log.warning(
                             f"    Repeated 429s at offset={offset}. "
                             "Stopping pages for this role."
                         )
+                        stats["blocked"] = True
                         return all_jobs, stats
                     log.warning(
-                        f"    429/Rate-limit detected — pausing {BACKOFF_429_SEC}s "
-                        f"({pauses_429}/{MAX_429_PAUSES})..."
+                        f"    429/Rate-limit detected — pausing {wait:.0f}s "
+                        f"({pauses_429}/{len(BACKOFF_429_STEPS)})..."
                     )
-                    time.sleep(BACKOFF_429_SEC)
+                    time.sleep(wait)
                     # Do NOT increment attempt — 429 pauses are not retries
 
                 else:
@@ -1089,6 +1120,12 @@ def main() -> None:
         help="Enable fast mode: drops cooldowns between roles to 3-6s and reduces page delays",
     )
     parser.add_argument(
+        "--time-budget",
+        type=float,
+        default=None,
+        help="Minutes after which the run saves what it has and stops cleanly (default: LINKEDIN_TIME_BUDGET_MIN, 0 = no limit)",
+    )
+    parser.add_argument(
         "--shard",
         type=str,
         default=None,
@@ -1154,6 +1191,9 @@ def main() -> None:
             global_seen_ids.add(job["id"])
 
     # Role filter
+    global _deadline
+    budget = args.time_budget if args.time_budget is not None else TIME_BUDGET_MIN
+    _deadline = time.monotonic() + budget * 60 if budget else None
     roles_to_run = ROLES
     if args.role:
         roles_to_run = [r for r in ROLES if args.role.lower() in r.lower()]
@@ -1190,82 +1230,126 @@ def main() -> None:
     scraped_any:    bool       = False
 
     # Main loop
-    for idx, role in enumerate(roles_to_run, start=1):
-        if role in completed:
-            log.info(f"[{idx:>2}/{len(roles_to_run)}] '{role}' — already completed, skipping")
-            continue
-
-        log.info(f"\n[{idx:>2}/{len(roles_to_run)}] -- {role} " + "-" * max(1, 48 - len(role)))
-
-        # Inter-role cooldown
-        if scraped_any:
-            if hot_remaining > 0 or prev_was_heavy:
-                cooldown = random.uniform(HOT_COOLDOWN_MIN, HOT_COOLDOWN_MAX)
-                hot_remaining = max(0, hot_remaining - 1)
-                log.info(f"  [HOT cooldown] Sleeping {cooldown:.0f}s...")
-            else:
-                cooldown = random.uniform(role_cd_min, role_cd_max)
-                log.info(f"  Sleeping {cooldown:.0f}s before next role...")
-            time.sleep(cooldown)
-
-        try:
-            jobs, stats = scrape_role(
-                role=role,
-                location=args.location,
-                hours_old=hours_old,
-                global_seen_ids=global_seen_ids,
-                fetch_description=fetch_description,
-                max_results=max_results,
-                base_delay_sec=base_delay,
-                desc_workers=DESC_WORKERS,
-            )
-            capped_parts = []
-            if stats["capped"]:
-                # LinkedIn shows at most ~1,000 jobs per search: search each work type separately
-                log.info(f"  '{role}' reached LinkedIn's limit: searching on-site, remote and hybrid separately")
-                for work_type in WORK_TYPES:
-                    more, part = scrape_role(
-                        role=role, location=args.location, hours_old=hours_old, global_seen_ids=global_seen_ids,
-                        fetch_description=fetch_description, max_results=max_results, base_delay_sec=base_delay,
-                        desc_workers=DESC_WORKERS, work_type=work_type)
-                    jobs += more
-                    stats["found"] += part["found"]
-                    stats["hit_429"] = stats["hit_429"] or part["hit_429"]
-                    if part["capped"]:
-                        capped_parts.append(WORK_TYPES[work_type])
-            coverage.append((role, stats["found"], len(jobs), "still capped: " + ", ".join(capped_parts)
-                             if capped_parts else ("split by work type" if stats["capped"] else "complete")))
-        except KeyboardInterrupt:
-            log.warning("\nInterrupted — saving state...")
-            _flush(state, completed, grand_total, global_seen_ids, run_jobs, use_supabase)
-            return
-        except Exception as exc:
-            log.error(f"Unexpected error on '{role}': {exc}", exc_info=True)
-            jobs, stats = [], {"batches": 0, "hit_429": False, "found": 0, "capped": False}
-            coverage.append((role, 0, 0, f"error: {exc}"[:80]))
-
-        scraped_any    = True
-        prev_was_heavy = stats["batches"] > 1
-        if stats["hit_429"]:
-            hot_remaining = HOT_STREAK_ROLES
-            log.warning(f"  429 seen — hot cooldowns for next {HOT_STREAK_ROLES} roles.")
-
-        if jobs:
-            log.info(f"  Found {len(jobs)} new jobs for '{role}'")
-            run_jobs.extend(jobs)
-            grand_total += len(jobs)
-            append_jobs_to_disk(jobs)
-            if use_supabase:
-                upsert_to_supabase(jobs)
+    blocked_roles: list[str] = []
+    unrun: list[str] = []
+    consecutive_blocked = 0
+    stop_shard = False
+    pass_roles = list(roles_to_run)
+    for pass_number in (1, 2):
+        if pass_number == 2:
+            # Roles LinkedIn blocked: one more try after a rest, if the time budget and the runner allow
+            retry = [role for role in blocked_roles if role not in completed]
+            if not retry or stop_shard or out_of_time(RETRY_BLOCKED_AFTER + 600):
+                break
+            log.info(f"\nRetrying {len(retry)} blocked role(s) after {RETRY_BLOCKED_AFTER // 60} minutes' rest")
+            time.sleep(RETRY_BLOCKED_AFTER)
+            pass_roles, blocked_roles, consecutive_blocked = retry, [], 0
         else:
-            log.info(f"  No new jobs for '{role}'")
+            blocked_roles = []
+        for idx, role in enumerate(pass_roles, start=1):
+            if role in completed:
+                log.info(f"[{idx:>2}/{len(pass_roles)}] '{role}' — already completed, skipping")
+                continue
+            if out_of_time(120):
+                log.warning("Time budget used up: saving what was collected and stopping the shard.")
+                unrun.append(role)
+                continue
+            if stop_shard:
+                unrun.append(role)
+                continue
 
-        completed.add(role)
-        state["completed_roles"] = list(completed)
-        state["total_jobs"]      = grand_total
-        state["seen_ids"]        = list(global_seen_ids)
-        save_state(state)
+            log.info(f"\n[{idx:>2}/{len(pass_roles)}] -- {role} " + "-" * max(1, 48 - len(role)))
 
+            # Inter-role cooldown
+            if scraped_any:
+                if hot_remaining > 0 or prev_was_heavy:
+                    cooldown = random.uniform(HOT_COOLDOWN_MIN, HOT_COOLDOWN_MAX)
+                    hot_remaining = max(0, hot_remaining - 1)
+                    log.info(f"  [HOT cooldown] Sleeping {cooldown:.0f}s...")
+                else:
+                    cooldown = random.uniform(role_cd_min, role_cd_max)
+                    log.info(f"  Sleeping {cooldown:.0f}s before next role...")
+                time.sleep(cooldown)
+
+            try:
+                jobs, stats = scrape_role(
+                    role=role,
+                    location=args.location,
+                    hours_old=hours_old,
+                    global_seen_ids=global_seen_ids,
+                    fetch_description=fetch_description,
+                    max_results=max_results,
+                    base_delay_sec=base_delay,
+                    desc_workers=DESC_WORKERS,
+                )
+                capped_parts = []
+                if stats["capped"]:
+                    # LinkedIn shows at most ~1,000 jobs per search: search each work type separately
+                    log.info(f"  '{role}' reached LinkedIn's limit: searching on-site, remote and hybrid separately")
+                    for work_type in WORK_TYPES:
+                        more, part = scrape_role(
+                            role=role, location=args.location, hours_old=hours_old, global_seen_ids=global_seen_ids,
+                            fetch_description=fetch_description, max_results=max_results, base_delay_sec=base_delay,
+                            desc_workers=DESC_WORKERS, work_type=work_type)
+                        jobs += more
+                        stats["found"] += part["found"]
+                        stats["hit_429"] = stats["hit_429"] or part["hit_429"]
+                        if part["capped"]:
+                            capped_parts.append(WORK_TYPES[work_type])
+                coverage.append((role, stats["found"], len(jobs), "still capped: " + ", ".join(capped_parts)
+                                 if capped_parts else ("split by work type" if stats["capped"] else "complete")))
+            except KeyboardInterrupt:
+                log.warning("\nInterrupted — saving state...")
+                _flush(state, completed, grand_total, global_seen_ids, run_jobs, use_supabase)
+                return
+            except Exception as exc:
+                log.error(f"Unexpected error on '{role}': {exc}", exc_info=True)
+                jobs, stats = [], {"batches": 0, "hit_429": False, "found": 0, "capped": False}
+                coverage.append((role, 0, 0, f"error: {exc}"[:80]))
+
+            scraped_any    = True
+            prev_was_heavy = stats["batches"] > 1
+            if stats["hit_429"]:
+                hot_remaining = HOT_STREAK_ROLES
+                log.warning(f"  429 seen — hot cooldowns for next {HOT_STREAK_ROLES} roles.")
+
+            # Blocked: LinkedIn refused this runner before the role gave anything. Not completed, so it is retried.
+            if stats.get("blocked") and not jobs:
+                blocked_roles.append(role)
+                consecutive_blocked += 1
+                if coverage and coverage[-1][0] == role:
+                    coverage.pop()
+                if consecutive_blocked >= MAX_BLOCKED_ROLES:
+                    log.warning(f"  {consecutive_blocked} roles in a row blocked by LinkedIn: this runner is being "
+                                "refused. Saving what was collected and stopping the shard.")
+                    stop_shard = True
+                continue
+            consecutive_blocked = 0
+
+            if jobs:
+                log.info(f"  Found {len(jobs)} new jobs for '{role}'")
+                run_jobs.extend(jobs)
+                grand_total += len(jobs)
+                append_jobs_to_disk(jobs)
+                if use_supabase:
+                    upsert_to_supabase(jobs)
+            else:
+                log.info(f"  No new jobs for '{role}'")
+
+            completed.add(role)
+            state["completed_roles"] = list(completed)
+            state["total_jobs"]      = grand_total
+            state["seen_ids"]        = list(global_seen_ids)
+            save_state(state)
+
+
+    for role in blocked_roles:
+        coverage.append((role, 0, 0, "blocked by LinkedIn (429), not collected"))
+    for role in unrun:
+        coverage.append((role, 0, 0, "not run: time budget used up or shard stopped"))
+    if blocked_roles or unrun:
+        log.warning(f"Not collected this run: {len(blocked_roles)} blocked role(s), {len(unrun)} not run. "
+                    "What was collected is saved and goes on to the merge.")
     export_strict_datasets()
 
     # Clean up state file on complete run so only the 2 CSV files remain
@@ -1284,6 +1368,10 @@ def main() -> None:
     log.info(f"  2. Strict CSV     : {CSV_STRICT_FILE}")
     log.info("=" * 65)
     write_coverage(coverage, args.post_time)
+    if blocked_roles or unrun:
+        # Everything collected is saved. The distinct exit code tells the workflow this shard is partial: its
+        # jobs are still merged, but it does not count as a complete scrape of the board (no expiry from it).
+        sys.exit(PARTIAL_EXIT_CODE)
 
 
 def write_coverage(coverage: list[tuple], post_time: str) -> None:

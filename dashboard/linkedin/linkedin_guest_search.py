@@ -5,6 +5,7 @@ The search page returns 10 jobs per request and refuses to go past result 1,000,
 show more than about 1,000 jobs (linkedin_68_roles.py splits a search that reaches it). A batch comes
 back as a DataFrame with the columns JobSpy used, so the scraper's row handling is unchanged.
 
+A request every 3.5-6.5 s: LinkedIn refuses shared GitHub runners after a few faster ones.
 Rate limits (HTTP 429) raise an error mentioning 429, so the caller pauses and retries the batch instead of
 taking a short batch for the end of the results.
 """
@@ -84,7 +85,7 @@ def parse_cards(page_html: str) -> list[dict]:
 
 
 def search_batch(role: str, location: str, hours_old: int | None, offset: int, size: int,
-                 work_type: str | None = None, pause: tuple[float, float] = (1.0, 2.5)) -> pd.DataFrame:
+                 work_type: str | None = None, pause: tuple[float, float] = (3.5, 6.5)) -> pd.DataFrame:
     """Results offset .. offset+size of one search, 10 per request.
 
     df.attrs["end"] is True when LinkedIn has no more results (an empty page, or its 1,000 limit).
