@@ -199,8 +199,12 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+      # A board that fails or times out still hands over the jobs it saved so far (it writes as it goes); only a
+      # clean finish earns the "complete" marker that lets the merge retire jobs the board no longer lists.
       - name: Run Scraper for ${{ matrix.board }}
-        timeout-minutes: 360
+        id: scrape
+        continue-on-error: true
+        timeout-minutes: 330
         run: |
           python pipeline.py --type-a-only --local-only --boards ${{ matrix.board }} --exclude-boards none --post-time ${{ needs.plan.outputs.post_time }} --output ${{ matrix.board }}_jobs_weekly.json
         env:
@@ -225,11 +229,22 @@ jobs:
           SKIP_DETAILS: "false"
 
       - name: Upload ATS Artifact
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: jobs-ats-${{ matrix.board }}
           path: dashboard/${{ matrix.board }}_jobs_weekly.json
           if-no-files-found: ignore
+
+      - name: Mark ${{ matrix.board }} complete
+        if: ${{ steps.scrape.outcome == 'success' }}
+        run: echo "${{ matrix.board }}" > "${{ runner.temp }}/complete.txt"
+      - name: Upload complete marker
+        if: ${{ steps.scrape.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ok-ats-${{ matrix.board }}
+          path: ${{ runner.temp }}/complete.txt
 
   # 2. Scrape LinkedIn & Indeed for the 68 roles (Sharded)
   scrape-li-indeed:
@@ -257,18 +272,24 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install python-jobspy pandas python-dotenv openpyxl httpx
 
+      # LinkedIn throttles GitHub's shared runners: no --fast, and the scraper stops itself after
+      # LINKEDIN_TIME_BUDGET_MIN (saving what it has, exit 3 = partial) instead of waiting out a 6 h limit.
       - name: Run ${{ matrix.board }} Shard ${{ matrix.shard }} (post time ${{ needs.plan.outputs.post_time }}, full details)
-        timeout-minutes: 360
+        id: scrape
+        continue-on-error: true
+        timeout-minutes: 150
         run: |
           if [ "${{ matrix.board }}" = "linkedin" ]; then
-            python linkedin/linkedin_68_roles.py --post-time ${{ needs.plan.outputs.post_time }} --shard "${{ matrix.shard }}" --fast --max-results all
+            python linkedin/linkedin_68_roles.py --post-time ${{ needs.plan.outputs.post_time }} --shard "${{ matrix.shard }}" --max-results all
           else
             python indeed/indeed_68_roles.py --post-time ${{ needs.plan.outputs.post_time }} --shard "${{ matrix.shard }}" --fast --max-results all
           fi
         env:
           PYTHONUNBUFFERED: "1"
+          LINKEDIN_TIME_BUDGET_MIN: "120"
 
       - name: Upload LI/Indeed Artifact
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: jobs-${{ matrix.board }}-${{ strategy.job-index }}
@@ -277,16 +298,24 @@ jobs:
             dashboard/indeed/indeed_jobs/*shard*
           if-no-files-found: ignore
 
+      - name: Mark shard complete
+        if: ${{ steps.scrape.outcome == 'success' }}
+        run: echo "${{ matrix.board }}" > "${{ runner.temp }}/complete.txt"
+      - name: Upload complete marker
+        if: ${{ steps.scrape.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ok-${{ matrix.board }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/complete.txt
+
   # 3. Merge everything and commit to repo
   merge-and-commit:
     needs: [plan, scrape-ats, scrape-li-indeed]
     if: >-
       ${{
-        always() &&
+        !cancelled() &&
         needs.plan.result == 'success' &&
-        (github.event_name != 'workflow_dispatch' || inputs.run_merge) &&
-        (needs.scrape-ats.result == 'success' || needs.scrape-ats.result == 'skipped') &&
-        (needs.scrape-li-indeed.result == 'success' || needs.scrape-li-indeed.result == 'skipped')
+        (github.event_name != 'workflow_dispatch' || inputs.run_merge)
       }}
     runs-on: ubuntu-latest
     permissions:
@@ -312,6 +341,36 @@ jobs:
         with:
           path: dashboard/scraped_data/
           run-id: ${{ inputs.reuse_artifacts_run_id }}
+
+      - name: Which boards finished cleanly
+        id: complete
+        working-directory: .
+        env:
+          ATS: ${{ needs.plan.outputs.ats }}
+          LI: ${{ needs.plan.outputs.li }}
+          EXPIRE: ${{ needs.plan.outputs.expire }}
+        run: |
+          python3 - <<'PY'
+          import json, os, glob
+          base = 'dashboard/scraped_data'
+          ats, li = json.loads(os.environ['ATS']), json.loads(os.environ['LI'])
+          done = [b for b in ats if glob.glob(f'{base}/ok-ats-{b}')]
+          # LinkedIn and Indeed run as 8 shards: the board is complete only when every shard finished cleanly
+          done += [b for b in li if len(glob.glob(f'{base}/ok-{b}-*')) >= 8]
+          missing = [b for b in ats + li if b not in done]
+          expire = os.environ['EXPIRE'] == 'true' and bool(done)
+          out = {'expire': str(expire).lower(), 'expire_boards': ','.join(done)}
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as handle:
+              for key, value in out.items():
+                  handle.write(f'{key}={value}\n')
+          summary = os.environ['GITHUB_STEP_SUMMARY']
+          with open(summary, 'a') as handle:
+              handle.write('### Scrape completeness\n')
+              handle.write(f'- Finished cleanly: {", ".join(done) or "none"}\n')
+              if missing:
+                  handle.write(f'- **Partial or failed** (their saved jobs are still merged, but nothing is retired from them): {", ".join(missing)}\n')
+          print(out, 'partial:', missing)
+          PY
 
       - name: Consolidate and Merge Data
         run: |
@@ -406,6 +465,7 @@ jobs:
           rm -rf scraped_data || true
 
       - name: Build final Excel + CSV deliverables
+        continue-on-error: true
         run: |
           python3 -m pip install --quiet pandas openpyxl
           python3 -m job_extraction.enrich_csv linkedin/linkedin_jobs/linkedin_68roles_jobs_us.csv --board LinkedIn
@@ -497,6 +557,7 @@ jobs:
         run: pip install "psycopg[binary]"
 
       - name: Audit merged job field completeness
+        continue-on-error: true
         run: |
           python3 audit_job_fields.py \
             linkedin/linkedin_jobs/linkedin_68roles_jobs_us.csv \
@@ -560,8 +621,8 @@ jobs:
           # More room for jobs: new jobs go to whichever database has most free space (empty = main only)
           JOBS_DATABASE_URL_2: ${{ secrets.JOBS_DATABASE_URL_2 }}
           # Jobs this run's boards no longer list are retired (see plan).
-          EXPIRE_MISSING: ${{ needs.plan.outputs.expire }}
-          EXPIRE_BOARDS: ${{ needs.plan.outputs.expire_boards }}
+          EXPIRE_MISSING: ${{ steps.complete.outputs.expire }}
+          EXPIRE_BOARDS: ${{ steps.complete.outputs.expire_boards }}
           # Storage: before inserting, remove the stalest jobs so the new ones fit (see db/neon_upsert.py).
           # Each Neon project's storage limit (repository variable JOBS_DB_MAX_MB, default 1 GB;
           # JOBS_DB_MAX_MB_2 for the second database if it differs).

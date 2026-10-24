@@ -88,5 +88,70 @@ class PagingTests(unittest.TestCase):
         self.assertTrue(stats["capped"])
 
 
+
+class ShardResilienceTests(unittest.TestCase):
+    """main() with a stubbed LinkedIn: a blocked or slow shard still finishes and hands over what it has."""
+
+    def run_main(self, outcomes, roles_list, argv=("x", "--shard", "1/1", "--post-time", "day"), budget_left=None):
+        calls, covered = [], []
+
+        def fake_scrape(role, **kwargs):
+            calls.append(role)
+            kind = outcomes[role].pop(0) if isinstance(outcomes[role], list) else outcomes[role]
+            if kind == "blocked":
+                return [], {"batches": 0, "hit_429": True, "found": 0, "capped": False, "blocked": True}
+            return [{"id": f"{role}-1", "job_title": role}], {"batches": 2, "hit_429": False, "found": 1,
+                                                              "capped": False, "blocked": False}
+        saved = []
+        self.last = (calls, saved, covered)  # readable even when main() exits with the partial-shard code
+        with mock.patch.object(roles, "ROLES", roles_list), mock.patch.object(roles, "scrape_role", fake_scrape), \
+                mock.patch.object(roles.time, "sleep"), mock.patch.object(roles, "save_state"), \
+                mock.patch.object(roles, "load_state", return_value={"completed_roles": [], "total_jobs": 0, "seen_ids": []}), \
+                mock.patch.object(roles, "append_jobs_to_disk", side_effect=saved.extend), \
+                mock.patch.object(roles, "export_strict_datasets"), mock.patch.object(roles, "load_existing_jobs", return_value=[]), \
+                mock.patch.object(roles, "write_coverage", side_effect=lambda rows, _t: covered.extend(rows)), \
+                mock.patch.object(sys, "argv", list(argv)):
+            if budget_left is not None:
+                real = roles.time.monotonic
+                with mock.patch.object(roles.time, "monotonic", side_effect=budget_left(real)):
+                    roles.main()
+            else:
+                roles.main()
+        return calls, saved, covered
+
+    def test_three_blocked_roles_in_a_row_stop_the_shard_but_keep_what_was_collected(self):
+        names = ["A", "B", "C", "D", "E", "F"]
+        with self.assertRaises(SystemExit) as stopped:  # a partial shard exits 3 after saving
+            self.run_main({"A": "ok", "B": "blocked", "C": "blocked", "D": "blocked", "E": "ok", "F": "ok"}, names)
+        self.assertEqual(roles.PARTIAL_EXIT_CODE, stopped.exception.code)
+        calls, saved, covered = self.last
+        self.assertEqual(["A", "B", "C", "D"], calls[:4])
+        self.assertEqual(["A-1"], [job["id"] for job in saved])  # A's jobs were kept
+        notes = {role: note for role, _, _, note in covered}
+        self.assertIn("blocked", notes["B"])
+        self.assertIn("not run", notes["E"])  # the rest of the shard is reported, not silently lost
+
+    def test_blocked_roles_are_tried_once_more_after_a_rest(self):
+        names = ["A", "B", "C"]
+        calls, saved, _ = self.run_main({"A": "ok", "B": ["blocked", "ok"], "C": "ok"}, names)
+        self.assertEqual(["A", "B", "C", "B"], calls)  # B retried at the end
+        self.assertEqual({"A-1", "B-1", "C-1"}, {job["id"] for job in saved})
+
+    def test_the_time_budget_ends_the_shard_cleanly(self):
+        names = ["A", "B", "C"]
+        ticks = iter(range(0, 10_000, 1))
+
+        def clock(real):
+            return lambda: next(ticks) * 60.0  # one minute per call
+
+        with self.assertRaises(SystemExit) as stopped:
+            self.run_main({n: "ok" for n in names}, names,
+                          argv=("x", "--shard", "1/1", "--post-time", "day", "--time-budget", "5"), budget_left=clock)
+        self.assertEqual(roles.PARTIAL_EXIT_CODE, stopped.exception.code)
+        calls, saved, covered = self.last
+        self.assertLess(len(calls), 3)  # stopped before every role ran
+        self.assertTrue(any("not run" in note for _, _, _, note in covered))
+
+
 if __name__ == "__main__":
     unittest.main()
