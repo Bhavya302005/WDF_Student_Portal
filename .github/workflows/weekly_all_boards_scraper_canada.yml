@@ -1,9 +1,11 @@
-name: 🚀 Weekly Ultimate Scraper Canada (All Boards + LI/Indeed)
+name: Weekly Ultimate Scraper Canada (All Boards + LI/Indeed)
 
 on:
-  schedule:
-    # Run every Sunday at midnight
-    - cron: '0 0 * * 0'
+  # Schedules are off (scrapes run only when started by hand). To turn them on, remove the
+  # leading '# ' from these lines.
+  # schedule:
+  #   # Run every Sunday at midnight
+  #   - cron: '0 0 * * 0'
   workflow_dispatch:
     inputs:
       run_scrape_ats:

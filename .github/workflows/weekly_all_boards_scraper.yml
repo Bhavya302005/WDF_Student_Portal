@@ -1,11 +1,13 @@
-name: 🚀 Ultimate Scraper (weekly all boards, daily LinkedIn + Indeed)
+name: Ultimate Scraper (weekly all boards, daily LinkedIn + Indeed)
 
 on:
-  schedule:
-    # Run every Sunday at midnight
-    - cron: '0 0 * * 0'
-    # Every day: LinkedIn + Indeed, jobs posted in the last 24 hours (see the plan step)
-    - cron: '0 9 * * *'
+  # Schedules are off (scrapes run only when started by hand). To turn them on, remove the
+  # leading '# ' from these lines.
+  # schedule:
+  #   # Run every Sunday at midnight
+  #   - cron: '0 0 * * 0'
+  #   # Every day: LinkedIn + Indeed, jobs posted in the last 24 hours (see the plan step)
+  #   - cron: '0 9 * * *'
   workflow_dispatch:
     inputs:
       run_merge:

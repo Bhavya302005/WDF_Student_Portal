@@ -1,4 +1,4 @@
-name: 🚀 Fast Test (100 Companies + 30 Roles Validation)
+name: Fast Test (100 Companies + 30 Roles Validation)
 
 on:
   workflow_dispatch:
