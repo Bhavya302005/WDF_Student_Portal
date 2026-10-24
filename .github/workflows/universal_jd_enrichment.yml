@@ -1,9 +1,9 @@
-name: 🧠 Universal JD Enrichment
+name: Universal JD Enrichment
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["🚀 Weekly Ultimate Scraper (All Boards + LI/Indeed)"]
+    workflows: ["Weekly Ultimate Scraper (All Boards + LI/Indeed)"]
     types:
       - completed
 
@@ -57,6 +57,6 @@ jobs:
       - name: Commit and push enriched files
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "feat: run universal JD enrichment for matching algorithm 🧠"
+          commit_message: "feat: run universal JD enrichment for matching algorithm"
           file_pattern: 'dashboard/*.json'
           commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
