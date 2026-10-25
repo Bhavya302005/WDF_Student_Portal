@@ -18,7 +18,7 @@ on:
         required: false
         default: "week"
         type: choice
-        options: [day, week, month, any]
+        options: [day, week, 3week, month, any]
       shards:
         description: "Number of parallel runners (4-16 recommended)"
         required: false
