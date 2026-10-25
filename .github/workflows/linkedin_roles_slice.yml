@@ -1,11 +1,11 @@
 name: LinkedIn Roles Scraper (Slice)
 
-# ── Which slice of the 68 roles this repo runs ───────────────────────────────
+# -- Which slice of the 68 roles this repo runs -------------------------------
 # These are 1-based role numbers (--start-idx / --end-idx in the scraper).
-# Repo A (roles 1–23):  ROLE_START=1   ROLE_END=23
-# Repo B (roles 24–45): ROLE_START=24  ROLE_END=45
-# Repo C (roles 46–68): ROLE_START=46  ROLE_END=68
-# Change these two env vars per repo — everything else stays identical.
+# Repo A (roles 1-23):  ROLE_START=1   ROLE_END=23
+# Repo B (roles 24-45): ROLE_START=24  ROLE_END=45
+# Repo C (roles 46-68): ROLE_START=46  ROLE_END=68
+# Change these two env vars per repo - everything else stays identical.
 env:
   ROLE_START: "1"
   ROLE_END: "23"
@@ -20,14 +20,14 @@ on:
         type: choice
         options: [day, week, month, any]
       shards:
-        description: "Number of parallel runners (4–16 recommended)"
+        description: "Number of parallel runners (4-16 recommended)"
         required: false
         default: "8"
         type: choice
         options: ["4", "8", "12", "16"]
 
 jobs:
-  # ── 1. Work out the shard list dynamically ──────────────────────────────────
+  # -- 1. Work out the shard list dynamically ----------------------------------
   plan:
     runs-on: ubuntu-latest
     outputs:
@@ -45,7 +45,7 @@ jobs:
           echo "shard_list=$LIST" >> "$GITHUB_OUTPUT"
           echo "post_time=${{ inputs.post_time || 'week' }}" >> "$GITHUB_OUTPUT"
 
-  # ── 2. Scrape — one runner per shard ────────────────────────────────────────
+  # -- 2. Scrape - one runner per shard ----------------------------------------
   scrape:
     needs: plan
     runs-on: ubuntu-latest
@@ -69,7 +69,7 @@ jobs:
         run: |
           pip install --quiet httpx python-dotenv pandas openpyxl
 
-      - name: Scrape shard ${{ matrix.shard }} (roles ${{ env.ROLE_START }}–${{ env.ROLE_END }})
+      - name: Scrape shard ${{ matrix.shard }} (roles ${{ env.ROLE_START }}-${{ env.ROLE_END }})
         working-directory: scrapers
         env:
           ROLE_START: ${{ env.ROLE_START }}
@@ -90,7 +90,7 @@ jobs:
           path: |
             scrapers/linkedin/linkedin_jobs/*shard*
 
-  # ── 3. Merge shards → enrich JDs → Excel ────────────────────────────────────
+  # -- 3. Merge shards - enrich JDs - Excel ------------------------------------
   deliver:
     needs: [plan, scrape]
     runs-on: ubuntu-latest
@@ -129,7 +129,7 @@ jobs:
                   print(f'  skip {path}: {e}')
               return rows
 
-          all_jobs    = {}   # id → row  (dedup)
+          all_jobs    = {}   # id - row  (dedup)
           strict_jobs = {}
 
           for f in sorted(glob.glob('../scraped_data/**/linkedin_shard_*_jobs.csv', recursive=True)):
@@ -170,7 +170,7 @@ jobs:
           import re, os, pandas as pd
 
           ILLEGAL = re.compile(
-              r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x84\x86-\x9f\ud800-\udfff￾￿]'
+              r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x84\x86-\x9f\ud800-\udfff--]'
           )
 
           def load(path):
@@ -202,14 +202,14 @@ jobs:
 
           slice_label = f"roles_{os.environ.get('ROLE_START','0')}_to_{os.environ.get('ROLE_END','68')}"
 
-          # ── strict_jobs.xlsx ──────────────────────────────────────────────────
+          # -- strict_jobs.xlsx --------------------------------------------------
           with pd.ExcelWriter(f'deliverables/strict_jobs_{slice_label}.xlsx', engine='openpyxl') as w:
               indexed(strict_df).to_excel(w, sheet_name='Strict', index=False)
               indexed(other_df).to_excel(w,  sheet_name='Other',  index=False)
               indexed(all_df).to_excel(w,    sheet_name='All',    index=False)
-          print(f'strict_jobs_{slice_label}.xlsx → strict: {len(strict_df)}, other: {len(other_df)}, all: {len(all_df)}')
+          print(f'strict_jobs_{slice_label}.xlsx - strict: {len(strict_df)}, other: {len(other_df)}, all: {len(all_df)}')
 
-          # ── flat CSV (for combining across repos) ────────────────────────────
+          # -- flat CSV (for combining across repos) ----------------------------
           indexed(all_df).to_csv(f'deliverables/all_jobs_{slice_label}.csv', index=False)
           indexed(strict_df).to_csv(f'deliverables/strict_jobs_{slice_label}.csv', index=False)
           EOF
