@@ -153,6 +153,9 @@ jobs:
       - name: Install dependencies
         run: pip install --quiet httpx pandas openpyxl
 
+      - name: Set PYTHONPATH for enrichment
+        run: echo "PYTHONPATH=${{ steps.root.outputs.dir }}" >> "$GITHUB_ENV"
+
       - name: Download all shard artifacts
         uses: actions/download-artifact@v4
         with:
@@ -206,6 +209,19 @@ jobs:
           write_csv(list(all_jobs.values()),    'linkedin/linkedin_jobs/linkedin_jobs_all.csv')
           write_csv(list(strict_jobs.values()), 'linkedin/linkedin_jobs/linkedin_jobs_strict.csv')
           print(f'Merged: {len(all_jobs)} all, {len(strict_jobs)} strict')
+
+          # -- enrich merged CSVs with job_extraction --------------------------
+          from pathlib import Path
+          try:
+              from job_extraction.enrich_csv import enrich_csv
+              for csv_path in ['linkedin/linkedin_jobs/linkedin_jobs_all.csv',
+                               'linkedin/linkedin_jobs/linkedin_jobs_strict.csv']:
+                  p = Path(csv_path)
+                  if p.exists() and p.stat().st_size > 0:
+                      n = enrich_csv(p, board='LinkedIn')
+                      print(f'  Enriched {n} rows in {csv_path}')
+          except ImportError:
+              print('  job_extraction not available — skipping enrichment')
 
           # -- build Excel -----------------------------------------------------
           ILLEGAL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
