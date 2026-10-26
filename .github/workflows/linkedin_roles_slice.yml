@@ -1,15 +1,10 @@
 name: LinkedIn Roles Scraper (Slice)
 
 # -- Which slice of the 68 roles this repo runs -------------------------------
-# These are 1-based role numbers (--start-idx / --end-idx in the scraper).
 # Repo A (roles 1-23):  ROLE_START=1   ROLE_END=23
 # Repo B (roles 24-45): ROLE_START=24  ROLE_END=45
 # Repo C (roles 46-68): ROLE_START=46  ROLE_END=68
-# Change these two env vars per repo -- everything else stays identical.
-#
-# If this repo has no scraper code of its own, set the SCRAPER_REPO secret to
-# the main repo slug (e.g. Bhavya302005/CS26017-Getworkin) and add a PAT with
-# repo read access as the SCRAPER_PAT secret. The workflow will clone it.
+# Change these two lines per repo -- everything else stays identical.
 env:
   ROLE_START: "1"
   ROLE_END: "23"
@@ -24,73 +19,73 @@ on:
         type: choice
         options: [day, week, 3week, month, any]
       shards:
-        description: "Number of parallel runners (4-16 recommended)"
+        description: "Number of parallel runners"
         required: false
         default: "8"
         type: choice
         options: ["4", "8", "12", "16"]
 
 jobs:
-  # -- 1. Work out the shard list dynamically ----------------------------------
-  plan:
-    runs-on: ubuntu-latest
-    outputs:
-      shard_list: ${{ steps.gen.outputs.shard_list }}
-      post_time:  ${{ steps.gen.outputs.post_time }}
-      scraper_dir: ${{ steps.find.outputs.scraper_dir }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Fetch scraper code if not in this repo
-        if: ${{ secrets.SCRAPER_REPO != '' }}
-        run: |
-          git clone "https://${{ secrets.SCRAPER_PAT }}@github.com/${{ secrets.SCRAPER_REPO }}.git" _scrapers
-        continue-on-error: false
-
-      - name: Find scraper root
-        id: find
-        run: |
-          if   [ -f "scrapers/linkedin/linkedin_68_roles.py" ]; then
-            echo "scraper_dir=scrapers" >> "$GITHUB_OUTPUT"
-          elif [ -f "dashboard/linkedin/linkedin_68_roles.py" ]; then
-            echo "scraper_dir=dashboard" >> "$GITHUB_OUTPUT"
-          elif [ -f "_scrapers/scrapers/linkedin/linkedin_68_roles.py" ]; then
-            echo "scraper_dir=_scrapers/scrapers" >> "$GITHUB_OUTPUT"
-          elif [ -f "linkedin/linkedin_68_roles.py" ]; then
-            echo "scraper_dir=." >> "$GITHUB_OUTPUT"
-          else
-            echo "ERROR: linkedin_68_roles.py not found" && exit 1
-          fi
-
-      - id: gen
-        run: |
-          N=${{ inputs.shards || '8' }}
-          LIST=$(python3 -c "
-          import json
-          n = int('$N')
-          print(json.dumps([f'{i+1}/{n}' for i in range(n)]))
-          ")
-          echo "shard_list=$LIST" >> "$GITHUB_OUTPUT"
-          echo "post_time=${{ inputs.post_time || 'week' }}" >> "$GITHUB_OUTPUT"
-
-  # -- 2. Scrape - one runner per shard ----------------------------------------
+  # -- Scrape: all shards start immediately, no planning step ------------------
   scrape:
-    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 90
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJson(needs.plan.outputs.shard_list) }}
+        shard: ["1", "2", "3", "4", "5", "6", "7", "8",
+                "9", "10", "11", "12", "13", "14", "15", "16"]
+        exclude:
+          - shard: ${{ inputs.shards == '4'  && '5'  || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '6'  || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '7'  || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '8'  || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '9'  || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '10' || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '11' || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '12' || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '13' || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '14' || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '15' || 'x' }}
+          - shard: ${{ inputs.shards == '4'  && '16' || 'x' }}
+          - shard: ${{ inputs.shards == '8'  && '9'  || 'x' }}
+          - shard: ${{ inputs.shards == '8'  && '10' || 'x' }}
+          - shard: ${{ inputs.shards == '8'  && '11' || 'x' }}
+          - shard: ${{ inputs.shards == '8'  && '12' || 'x' }}
+          - shard: ${{ inputs.shards == '8'  && '13' || 'x' }}
+          - shard: ${{ inputs.shards == '8'  && '14' || 'x' }}
+          - shard: ${{ inputs.shards == '8'  && '15' || 'x' }}
+          - shard: ${{ inputs.shards == '8'  && '16' || 'x' }}
+          - shard: ${{ inputs.shards == '12' && '13' || 'x' }}
+          - shard: ${{ inputs.shards == '12' && '14' || 'x' }}
+          - shard: ${{ inputs.shards == '12' && '15' || 'x' }}
+          - shard: ${{ inputs.shards == '12' && '16' || 'x' }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch scraper code if not in this repo
-        if: ${{ secrets.SCRAPER_REPO != '' }}
+      - name: Fetch scraper code (only if this repo has none)
         run: |
-          git clone "https://${{ secrets.SCRAPER_PAT }}@github.com/${{ secrets.SCRAPER_REPO }}.git" _scrapers
+          if [ -n "${{ secrets.SCRAPER_REPO }}" ] && \
+             ! find . -name "linkedin_68_roles.py" -not -path "./.git/*" | grep -q .; then
+            git clone "https://${{ secrets.SCRAPER_PAT }}@github.com/${{ secrets.SCRAPER_REPO }}.git" _scrapers
+          fi
+
+      - name: Find scraper root
+        id: root
+        run: |
+          if   find scrapers   -name "linkedin_68_roles.py" 2>/dev/null | grep -q .; then
+            echo "dir=scrapers" >> "$GITHUB_OUTPUT"
+          elif find dashboard  -name "linkedin_68_roles.py" 2>/dev/null | grep -q .; then
+            echo "dir=dashboard" >> "$GITHUB_OUTPUT"
+          elif find _scrapers  -name "linkedin_68_roles.py" 2>/dev/null | grep -q .; then
+            echo "dir=$(dirname $(find _scrapers -name linkedin_68_roles.py | head -1) | sed 's|/linkedin$||')" >> "$GITHUB_OUTPUT"
+          elif find .          -name "linkedin_68_roles.py" -not -path "./.git/*" 2>/dev/null | grep -q .; then
+            echo "dir=$(dirname $(find . -name linkedin_68_roles.py -not -path './.git/*' | head -1) | sed 's|/linkedin$||')" >> "$GITHUB_OUTPUT"
+          else
+            echo "ERROR: linkedin_68_roles.py not found" && exit 1
+          fi
 
       - uses: actions/setup-python@v5
         with:
@@ -100,41 +95,57 @@ jobs:
       - name: Install dependencies
         run: pip install --quiet httpx python-dotenv pandas openpyxl
 
-      - name: Scrape shard ${{ matrix.shard }} (roles ${{ env.ROLE_START }}-${{ env.ROLE_END }})
-        env:
-          SCRAPER_DIR: ${{ needs.plan.outputs.scraper_dir }}
+      - name: Scrape shard ${{ matrix.shard }}/${{ inputs.shards || '8' }}
         run: |
-          cd "$SCRAPER_DIR"
+          N=${{ inputs.shards || '8' }}
+          SHARD="${{ matrix.shard }}/$N"
+          cd "${{ steps.root.outputs.dir }}"
           python3 linkedin/linkedin_68_roles.py \
-            --post-time "${{ needs.plan.outputs.post_time }}" \
-            --shard     "${{ matrix.shard }}" \
+            --post-time "${{ inputs.post_time || 'week' }}" \
+            --shard     "$SHARD" \
             --max-results all \
             --start-idx "${{ env.ROLE_START }}" \
             --end-idx   "${{ env.ROLE_END }}"
 
       - name: Upload shard CSV
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: shard-${{ strategy.job-index }}
+          name: shard-${{ matrix.shard }}
           retention-days: 3
           path: |
-            ${{ needs.plan.outputs.scraper_dir }}/linkedin/linkedin_jobs/*shard*
+            ${{ steps.root.outputs.dir }}/linkedin/linkedin_jobs/*shard*
 
-  # -- 3. Merge shards - enrich JDs - Excel ------------------------------------
+  # -- Merge shards, enrich JDs, build Excel ----------------------------------
   deliver:
-    needs: [plan, scrape]
+    needs: scrape
     runs-on: ubuntu-latest
     if: always()
-    env:
-      SCRAPER_DIR: ${{ needs.plan.outputs.scraper_dir }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch scraper code if not in this repo
-        if: ${{ secrets.SCRAPER_REPO != '' }}
+      - name: Fetch scraper code (only if this repo has none)
         run: |
-          git clone "https://${{ secrets.SCRAPER_PAT }}@github.com/${{ secrets.SCRAPER_REPO }}.git" _scrapers
+          if [ -n "${{ secrets.SCRAPER_REPO }}" ] && \
+             ! find . -name "linkedin_68_roles.py" -not -path "./.git/*" | grep -q .; then
+            git clone "https://${{ secrets.SCRAPER_PAT }}@github.com/${{ secrets.SCRAPER_REPO }}.git" _scrapers
+          fi
+
+      - name: Find scraper root
+        id: root
+        run: |
+          if   find scrapers   -name "linkedin_68_roles.py" 2>/dev/null | grep -q .; then
+            echo "dir=scrapers" >> "$GITHUB_OUTPUT"
+          elif find dashboard  -name "linkedin_68_roles.py" 2>/dev/null | grep -q .; then
+            echo "dir=dashboard" >> "$GITHUB_OUTPUT"
+          elif find _scrapers  -name "linkedin_68_roles.py" 2>/dev/null | grep -q .; then
+            echo "dir=$(dirname $(find _scrapers -name linkedin_68_roles.py | head -1) | sed 's|/linkedin$||')" >> "$GITHUB_OUTPUT"
+          elif find .          -name "linkedin_68_roles.py" -not -path "./.git/*" 2>/dev/null | grep -q .; then
+            echo "dir=$(dirname $(find . -name linkedin_68_roles.py -not -path './.git/*' | head -1) | sed 's|/linkedin$||')" >> "$GITHUB_OUTPUT"
+          else
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-python@v5
         with:
@@ -151,12 +162,20 @@ jobs:
           path: scraped_data
           merge-multiple: false
 
-      - name: Merge shards into master CSVs
+      - name: Merge + enrich + Excel
+        env:
+          ROLE_START: ${{ env.ROLE_START }}
+          ROLE_END:   ${{ env.ROLE_END }}
+          SCRAPER_DIR: ${{ steps.root.outputs.dir }}
         run: |
-          cd "$SCRAPER_DIR"
-          python3 - <<'EOF'
-          import glob, csv, os
+          python3 - <<'PYEOF'
+          import glob, csv, os, re
+          import pandas as pd
 
+          sdir = os.environ['SCRAPER_DIR']
+          os.chdir(sdir)
+
+          # -- merge shards ----------------------------------------------------
           def read_shard(path):
               try:
                   with open(path, newline='', encoding='utf-8') as f:
@@ -167,45 +186,28 @@ jobs:
 
           all_jobs    = {}
           strict_jobs = {}
-
-          for f in sorted(glob.glob('../../scraped_data/**/linkedin_shard_*_jobs.csv', recursive=True)):
+          base = os.path.join(os.path.dirname(os.getcwd()) if sdir != '.' else '..', 'scraped_data')
+          for f in sorted(glob.glob(f'{base}/**/linkedin_shard_*_jobs.csv', recursive=True)):
               for j in read_shard(f):
-                  all_jobs.setdefault(j.get('id', ''), j)
-
-          for f in sorted(glob.glob('../../scraped_data/**/linkedin_shard_*_jobs_strict.csv', recursive=True)):
+                  all_jobs.setdefault(j.get('id',''), j)
+          for f in sorted(glob.glob(f'{base}/**/linkedin_shard_*_jobs_strict.csv', recursive=True)):
               for j in read_shard(f):
-                  strict_jobs.setdefault(j.get('id', ''), j)
+                  strict_jobs.setdefault(j.get('id',''), j)
 
           os.makedirs('linkedin/linkedin_jobs', exist_ok=True)
 
-          def write(rows, path):
-              if not rows:
-                  return
+          def write_csv(rows, path):
+              if not rows: return
               with open(path, 'w', newline='', encoding='utf-8') as f:
                   w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
                   w.writeheader(); w.writerows(rows)
               print(f'  {path}: {len(rows)} rows')
 
-          write(list(all_jobs.values()),    'linkedin/linkedin_jobs/linkedin_jobs_all.csv')
-          write(list(strict_jobs.values()), 'linkedin/linkedin_jobs/linkedin_jobs_strict.csv')
-          print(f'Total: {len(all_jobs)} all, {len(strict_jobs)} strict')
-          EOF
+          write_csv(list(all_jobs.values()),    'linkedin/linkedin_jobs/linkedin_jobs_all.csv')
+          write_csv(list(strict_jobs.values()), 'linkedin/linkedin_jobs/linkedin_jobs_strict.csv')
+          print(f'Merged: {len(all_jobs)} all, {len(strict_jobs)} strict')
 
-      - name: Enrich with full job descriptions
-        continue-on-error: true
-        run: |
-          cd "$SCRAPER_DIR"
-          python3 -m job_extraction.enrich_csv \
-            linkedin/linkedin_jobs/linkedin_jobs_all.csv    --board LinkedIn || true
-          python3 -m job_extraction.enrich_csv \
-            linkedin/linkedin_jobs/linkedin_jobs_strict.csv --board LinkedIn || true
-
-      - name: Build Excel deliverable
-        run: |
-          cd "$SCRAPER_DIR"
-          python3 - <<'EOF'
-          import re, os, pandas as pd
-
+          # -- build Excel -----------------------------------------------------
           ILLEGAL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
 
           def load(path):
@@ -213,45 +215,40 @@ jobs:
 
           def clean(df):
               for col in df.columns:
-                  df[col] = (df[col].fillna('')
-                               .astype(str)
+                  df[col] = (df[col].fillna('').astype(str)
                                .str.replace(r'\r\n|\r|\n', ' ', regex=True)
                                .apply(lambda x: ILLEGAL.sub('', x)))
               return df
-
-          all_df    = load('linkedin/linkedin_jobs/linkedin_jobs_all.csv')
-          strict_df = load('linkedin/linkedin_jobs/linkedin_jobs_strict.csv')
-
-          strict_ids = set(strict_df['id'].dropna()) if 'id' in strict_df.columns else set()
-          other_df   = all_df[~all_df.get('id', pd.Series()).isin(strict_ids)].copy() \
-                       if not all_df.empty else pd.DataFrame()
 
           def indexed(df):
               df = df.drop(columns=['Index_No'], errors='ignore').reset_index(drop=True)
               df.insert(0, 'Index_No', range(1, len(df)+1))
               return clean(df)
 
+          all_df    = load('linkedin/linkedin_jobs/linkedin_jobs_all.csv')
+          strict_df = load('linkedin/linkedin_jobs/linkedin_jobs_strict.csv')
+          strict_ids = set(strict_df['id'].dropna()) if 'id' in strict_df.columns else set()
+          other_df  = all_df[~all_df.get('id', pd.Series(dtype=str)).isin(strict_ids)].copy() \
+                      if not all_df.empty else pd.DataFrame()
+
           os.makedirs('deliverables', exist_ok=True)
-          s = os.environ.get('ROLE_START', '0')
-          e = os.environ.get('ROLE_END', '68')
+          s = os.environ.get('ROLE_START','0')
+          e = os.environ.get('ROLE_END','68')
           label = f"roles_{s}_to_{e}"
 
           with pd.ExcelWriter(f'deliverables/jobs_{label}.xlsx', engine='openpyxl') as w:
               indexed(strict_df).to_excel(w, sheet_name='Strict', index=False)
               indexed(other_df).to_excel(w,  sheet_name='Other',  index=False)
               indexed(all_df).to_excel(w,    sheet_name='All',    index=False)
-          print(f'jobs_{label}.xlsx - strict:{len(strict_df)} other:{len(other_df)} all:{len(all_df)}')
+          print(f'jobs_{label}.xlsx: strict={len(strict_df)} other={len(other_df)} all={len(all_df)}')
 
           indexed(all_df).to_csv(f'deliverables/all_jobs_{label}.csv', index=False)
           indexed(strict_df).to_csv(f'deliverables/strict_jobs_{label}.csv', index=False)
-          EOF
-        env:
-          ROLE_START: ${{ env.ROLE_START }}
-          ROLE_END:   ${{ env.ROLE_END }}
+          PYEOF
 
       - name: Upload deliverables
         uses: actions/upload-artifact@v4
         with:
-          name: linkedin-jobs-slice-${{ env.ROLE_START }}-${{ env.ROLE_END }}
+          name: linkedin-jobs-${{ env.ROLE_START }}-${{ env.ROLE_END }}
           retention-days: 7
-          path: ${{ needs.plan.outputs.scraper_dir }}/deliverables/
+          path: ${{ steps.root.outputs.dir }}/deliverables/
