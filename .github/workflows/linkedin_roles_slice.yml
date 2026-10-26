@@ -92,7 +92,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install --quiet httpx python-dotenv pandas openpyxl python-jobspy
+        run: pip install --quiet httpx python-dotenv pandas openpyxl
 
       - name: Scrape shard ${{ matrix.shard }}/${{ inputs.shards || '8' }}
         run: |

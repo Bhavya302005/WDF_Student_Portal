@@ -80,12 +80,8 @@ from urllib.parse import unquote
 # -- Dependency checks --------------------------------------------------------
 try:
     import pandas as pd
-    from jobspy import scrape_jobs
-except ImportError as exc:
-    print(
-        f"ERROR: Missing required package: {exc.name}.\n"
-        "Run: pip install python-jobspy pandas"
-    )
+except ImportError:
+    print("ERROR: Missing required package: pandas.\nRun: pip install pandas")
     raise SystemExit(1)
 
 try:
@@ -663,7 +659,7 @@ def _parse_linkedin_detail_html(page_html: str) -> dict[str, Any]:
     return {key: value for key, value in details.items() if value not in (None, "", [], {})}
 
 
-from linkedin_guest_search import LIMIT as GUEST_LIMIT, WORK_TYPES, search_batch  # noqa: E402
+from linkedin_guest_search import LIMIT as GUEST_LIMIT, US_STATES, WORK_TYPES, search_batch  # noqa: E402
 
 
 def _fetch_one_job_details(url: str) -> dict[str, Any]:
@@ -1283,21 +1279,29 @@ def main() -> None:
                     desc_workers=DESC_WORKERS,
                 )
                 capped_parts = []
-                if stats["capped"]:
-                    # LinkedIn shows at most ~1,000 jobs per search: search each work type separately
-                    log.info(f"  '{role}' reached LinkedIn's limit: searching on-site, remote and hybrid separately")
-                    for work_type in WORK_TYPES:
+                us_wide = args.location.strip().lower() in ("united states", "usa", "us", "united states of america")
+                if stats["capped"] and not us_wide:
+                    capped_parts.append("not split: the search is not US-wide")
+                if stats["capped"] and us_wide:
+                    # LinkedIn shows at most ~1,000 jobs per search: search each US state separately (its work-type
+                    # and job-type filters are ignored). Jobs already found are skipped through global_seen_ids.
+                    log.info(f"  '{role}' reached LinkedIn's limit: searching state by state")
+                    for state_name in US_STATES:
+                        if out_of_time() or stats.get("blocked"):
+                            capped_parts.append(f"stopped before {state_name}")
+                            break
                         more, part = scrape_role(
-                            role=role, location=args.location, hours_old=hours_old, global_seen_ids=global_seen_ids,
-                            fetch_description=fetch_description, max_results=max_results, base_delay_sec=base_delay,
-                            desc_workers=DESC_WORKERS, work_type=work_type)
+                            role=role, location=f"{state_name}, United States", hours_old=hours_old,
+                            global_seen_ids=global_seen_ids, fetch_description=fetch_description,
+                            max_results=max_results, base_delay_sec=base_delay, desc_workers=DESC_WORKERS)
                         jobs += more
                         stats["found"] += part["found"]
                         stats["hit_429"] = stats["hit_429"] or part["hit_429"]
+                        stats["blocked"] = stats.get("blocked") or part.get("blocked")
                         if part["capped"]:
-                            capped_parts.append(WORK_TYPES[work_type])
+                            capped_parts.append(state_name)
                 coverage.append((role, stats["found"], len(jobs), "still capped: " + ", ".join(capped_parts)
-                                 if capped_parts else ("split by work type" if stats["capped"] else "complete")))
+                                 if capped_parts else ("split by state" if stats["capped"] else "complete")))
             except KeyboardInterrupt:
                 log.warning("\nInterrupted — saving state...")
                 _flush(state, completed, grand_total, global_seen_ids, run_jobs, use_supabase)
