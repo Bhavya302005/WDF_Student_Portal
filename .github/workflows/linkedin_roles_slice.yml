@@ -170,8 +170,9 @@ jobs:
           import glob, csv, os, re
           import pandas as pd
 
+          workspace = os.environ.get('GITHUB_WORKSPACE', os.getcwd())
           sdir = os.environ['SCRAPER_DIR']
-          os.chdir(sdir)
+          os.chdir(os.path.join(workspace, sdir))
 
           # -- merge shards ----------------------------------------------------
           def read_shard(path):
@@ -184,7 +185,8 @@ jobs:
 
           all_jobs    = {}
           strict_jobs = {}
-          base = os.path.join(os.path.dirname(os.getcwd()) if sdir != '.' else '..', 'scraped_data')
+          base = os.path.join(workspace, 'scraped_data')
+          print(f'Looking for shards in: {base}')
           for f in sorted(glob.glob(f'{base}/**/linkedin_shard_*_jobs.csv', recursive=True)):
               for j in read_shard(f):
                   all_jobs.setdefault(j.get('id',''), j)
