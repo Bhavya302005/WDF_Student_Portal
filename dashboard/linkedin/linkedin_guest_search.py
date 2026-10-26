@@ -24,7 +24,18 @@ import pandas as pd
 SEARCH = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
 PAGE = 10
 LIMIT = 1000  # LinkedIn answers HTTP 400 from this result on
-WORK_TYPES = {"1": "on-site", "2": "remote", "3": "hybrid"}
+# LinkedIn's public search ignores its work-type (f_WT) and job-type (f_JT) filters: the same jobs come back
+# whatever they say. A search that reaches the 1,000 limit is split by place instead, which it does honour.
+US_STATES = [
+    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
+    "District of Columbia", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas",
+    "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi",
+    "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York",
+    "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island",
+    "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
+    "West Virginia", "Wisconsin", "Wyoming",
+]
+WORK_TYPES = {"1": "on-site", "2": "remote", "3": "hybrid"}  # kept for callers; the filter has no effect
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/130.0.0.0 Safari/537.36",
@@ -85,7 +96,8 @@ def parse_cards(page_html: str) -> list[dict]:
 
 
 def search_batch(role: str, location: str, hours_old: int | None, offset: int, size: int,
-                 work_type: str | None = None, pause: tuple[float, float] = (3.5, 6.5)) -> pd.DataFrame:
+                 work_type: str | None = None, pause: tuple[float, float] = (3.5, 6.5),
+                 filters: dict[str, str] | None = None) -> pd.DataFrame:
     """Results offset .. offset+size of one search, 10 per request.
 
     df.attrs["end"] is True when LinkedIn has no more results (an empty page, or its 1,000 limit).
@@ -95,6 +107,8 @@ def search_batch(role: str, location: str, hours_old: int | None, offset: int, s
         query["f_TPR"] = f"r{int(hours_old) * 3600}"
     if work_type:
         query["f_WT"] = work_type
+    if filters:  # other LinkedIn filters: f_JT job type (F,P,C,T,I...), f_E experience level (1-6), f_SB2 salary...
+        query.update(filters)
     rows: list[dict] = []
     end = False
     for start in range(offset, offset + size, PAGE):
