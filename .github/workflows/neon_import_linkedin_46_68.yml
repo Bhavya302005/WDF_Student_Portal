@@ -8,6 +8,11 @@ on:
         type: boolean
         default: false
 
+  push:
+    branches: [chore/neon-job-cleanup]
+    paths:
+      - .github/workflows/neon_import_linkedin_46_68.yml
+
 permissions:
   contents: read
   actions: read
