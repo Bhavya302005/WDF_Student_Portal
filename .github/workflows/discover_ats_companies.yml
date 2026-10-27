@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Platforms to discover (comma-separated)"
+        description: "Platforms to discover (comma-separated: workday,oracle,greenhouse,lever,ashby,smartrecruiter,jobvite,icims,bamboohr,teamtailor,workable)"
         required: false
-        default: "workday,oracle"
+        default: "workday,oracle,greenhouse,lever,ashby,smartrecruiter,jobvite,icims,bamboohr,teamtailor,workable"
         type: string
       dry_run:
         description: "Dry run (report only, don't add to company lists)"
@@ -17,7 +17,7 @@ on:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     permissions:
       contents: write
 
@@ -53,5 +53,5 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "feat: discover new ATS companies via Common Crawl"
-          file_pattern: "scrapers/workday/workday.csv scrapers/oracle/oracle.csv"
+          file_pattern: "scrapers/workday/workday.csv scrapers/oracle/oracle.csv scrapers/greenhouse/greenhouse_companies.txt scrapers/lever/lever_companies.txt scrapers/ashby/ashby_companies.txt scrapers/smartrecruiter/smartrecruiter_companies.txt scrapers/jobvite/jobvite_companies.txt scrapers/icims/icims.csv scrapers/bamboohr/bamboohr.csv scrapers/teamtailor/teamtailor.csv scrapers/workable/workable.csv"
           commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
