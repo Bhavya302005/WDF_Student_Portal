@@ -1,0 +1,65 @@
+name: Prune jobs older than 30 days (preserve posts)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete backed-up jobs older than 30 days (false only inventories)
+        type: boolean
+        default: false
+  push:
+    branches: [chore/neon-job-cleanup]
+    paths:
+      - .github/workflows/neon_job_cleanup.yml
+      - dashboard/db/prune_old_jobs.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neon-job-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      JOBS_DATABASE_URL_2: ${{ secrets.JOBS_DATABASE_URL_2 }}
+      JOBS_DATABASE_URL_3: ${{ secrets.JOBS_DATABASE_URL_3 }}
+      JOBS_DATABASE_URL_4: ${{ secrets.JOBS_DATABASE_URL_4 }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install 'psycopg[binary]>=3.2,<4'
+      - name: Inventory only
+        if: ${{ !inputs.apply }}
+        run: python dashboard/db/prune_old_jobs.py inventory
+      - name: Back up exact candidate rows and IDs
+        if: ${{ inputs.apply }}
+        run: python dashboard/db/prune_old_jobs.py backup
+      - name: Upload backup before allowing deletion
+        if: ${{ inputs.apply }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: old-jobs-backup-${{ github.run_id }}
+          path: neon-job-cleanup/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+      - name: Delete only backed-up, dated, unprotected job rows
+        if: ${{ inputs.apply }}
+        run: python dashboard/db/prune_old_jobs.py delete
+      - name: Save counts and outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: old-jobs-report-${{ github.run_id }}
+          path: |
+            neon-job-cleanup/manifest.json
+            neon-job-cleanup/deletion-report.json
+          if-no-files-found: warn
+          retention-days: 30
