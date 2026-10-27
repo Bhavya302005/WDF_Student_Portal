@@ -109,8 +109,8 @@ class LinkedInDetailParserTests(unittest.TestCase):
         self.assertEqual(enriched["posted_at"], "2026-10-15T00:00:00+00:00")
         self.assertEqual(enriched["experience_min"], 5.0)
         self.assertIn("SQL", enriched["skills_required"])
-        self.assertEqual(enriched["job_type"], "full time")
-        self.assertEqual(enriched["work_mode"], "remote")
+        self.assertEqual(enriched["job_type"], "full_time")
+        self.assertEqual(enriched["work_mode"], "Remote")
         self.assertEqual(enriched["role_category"], "Procurement Manager")
 
 if __name__ == "__main__":

@@ -146,5 +146,159 @@ class ExtractionV5Tests(unittest.TestCase):
         self.assertNotIn("Dental", job["basic_qualifications"])
 
 
+
+def pay(description: str, location: str = "") -> str:
+    return extract_job({"job_title": "x", "description": description, "location": location})["salary"]
+
+
+class SalarySelectionTests(unittest.TestCase):
+    """Cases taken from stored jobs where the pay was stated but not picked up."""
+
+    def test_pay_is_found_next_to_perks_and_add_ons(self) -> None:
+        self.assertEqual(pay("Base Pay: $18.00 per hour, plus $1.25 per hour shift differential for 2nd shift"), "$18 per hour")
+        self.assertEqual(pay("Signing Bonus: $1,000\nTo be paid out upon graduation. Compensation: This role pays "
+                             "$45,000 - $55,000 annually."), "$45,000 - $55,000 per year")
+        self.assertEqual(pay("What we offer: Sign on bonus Competitive Compensation: $118,000 - $135,000, model based on "
+                             "productivity"), "$118,000 - $135,000 per year")
+        self.assertEqual(pay("Monthly Health Care Allowance - €450/month. Growth Wallet - €1,200/year. "
+                             "Gross salary €48,000 - €56,000 per year", "Berlin"), "€48,000 - €56,000 per year")
+
+    def test_currency_and_period_come_from_the_job_when_unstated(self) -> None:
+        self.assertEqual(pay("Earn $15.50 Per Hour"), "$15.50 per hour")
+        self.assertEqual(pay("Salary: $85,000 - $95,000"), "$85,000 - $95,000 per year")
+        self.assertEqual(pay("Hourly rate of $32.76 + shift allowances", "Sydney, NSW"), "AU$32.76 per hour")
+        self.assertEqual(pay("Minimum Salary/Wage\nUSD$ 12.00 Hr.\nMaximum Salary/Wage\nUSD$ 20.00 Hr."), "$12 - $20 per hour")
+        self.assertEqual(pay("Compensation Range: $271,000 - $216,800"), "$216,800 - $271,000 per year")
+
+    def test_one_range_per_country_or_state_picks_the_jobs_own(self) -> None:
+        both = ("For candidates based in the US, the salary range is $118,500 to $216,500 USD. For candidates based "
+                "out of Canada, the salary range is $171,500 to $201,000 CAD.")
+        self.assertEqual(pay(both, "Toronto, ON"), "CA$171,500 - CA$201,000 per year")
+        states = "New Jersey Base Pay Range:\n$30,000 — $50,000 USD\nCalifornia Base Pay Range:\n$90,000 — $140,000 USD"
+        self.assertEqual(pay(states, "Newark, New Jersey"), "$30,000 - $50,000 per year")
+        self.assertEqual(pay(states, "San Jose, California"), "$90,000 - $140,000 per year")
+        self.assertEqual(pay(states, "Remote"), "")
+
+    def test_money_that_is_not_pay_is_ignored(self) -> None:
+        for text in ("Excellent benefit package includes medical, dental, 401k, tuition reimbursement",
+                     "Around the clock clinical support by phone $1,200 nursing referral bonuses 6 weeks",
+                     "prospect and close large strategic deals (+$500K) with Enterprise accounts",
+                     "SIGN ON BONUS:\nFull-time (30 hours or more a week) - $3,000.00\nPart-time (29 hours or less a week) - $2,000.00",
+                     "0-25 miles: $32\n25-40 miles: $48.50\n40-75 miles: $72.00\n75+ miles: $90",
+                     "generated annual sales of CHF 11.76 billion. To fulfil our goals",
+                     "managing commercial projects costs of at least $5 Million. 3+ Years experience",
+                     "Reembolso en botas de hasta $150 Acceso a entrenamiento"):
+            self.assertEqual(pay(text), "", text)
+        self.assertEqual(pay("Salary: Up to £100,000 and equity. We raised $5,000,000 from investors", "London, UK"),
+                         "£100,000 per year")
+
+    def test_reported_salary_regressions(self) -> None:
+        cases = [
+            ("Salary Range: $90-110K", "$90,000 - $110,000 per year"),
+            ("The base salary range is between $131,480 and $207,000 per year.",
+             "$131,480 - $207,000 per year"),
+            ("Pay: Up to $29/hr", "$29 per hour"),
+            ("Pay Range: $30.72 - $35.29", "$30.72 - $35.29 per hour"),
+        ]
+        for description, expected in cases:
+            with self.subTest(description=description):
+                self.assertEqual(pay(description, "Houston, TX"), expected)
+        development = extract_job({"job_title": "x", "location": "Mountain View, CA",
+                                   "description": "Professional Development: $1500 per year Professional Development Budget"})
+        self.assertEqual(development["salary"], "")
+        self.assertEqual(development["extraction"]["salary_candidates"], [])
+
+    def test_measurements_and_business_scale_money_are_not_candidates(self) -> None:
+        false_salary = (
+            "The company has five manufacturing facilities encompassing 1.2m sq. feet.",
+            "Experience managing procurement risks for $100M+ capital projects.",
+            "Managed $250M annual spend and delivered $12M in cost savings.",
+            "Oversaw a portfolio valued at $1.5M.",
+            "Owned a $75M book of business.",
+            "Managed a $500K capital project budget.",
+        )
+        for description in false_salary:
+            with self.subTest(description=description):
+                job = extract_job({"job_title": "x", "location": "Houston, TX", "description": description})
+                self.assertEqual(job["salary"], "")
+                self.assertEqual(job["extraction"]["salary_candidates"], [])
+
+        # Large real compensation is retained when employee pay is explicit.
+        self.assertEqual(pay("Total compensation: $1.2M per year", "Houston, TX"),
+                         "$1,200,000 per year (total compensation)")
+
+    def test_only_on_target_earnings_is_used_and_labelled(self) -> None:
+        self.assertEqual(pay("OTE: $140,000 - $200,000 per year"), "$140,000 - $200,000 per year (OTE)")
+
+
+def years(description: str):
+    job = extract_job({"job_title": "x", "description": description})
+    return job["experience_min"], job["experience_max"]
+
+
+class ExperienceTests(unittest.TestCase):
+    def test_requirement_forms(self) -> None:
+        self.assertEqual(years("lenders 2+ years in business development or sales roles Track record of"), (2.0, None))
+        self.assertEqual(years("*Work Experience: * 2-4 years *Supervisory Experience: * 1-3 years"), (2.0, 4.0))
+        self.assertEqual(years("Experience:\nTechnical support or help desk: 3–4 years (Required)"), (3.0, 4.0))
+        self.assertEqual(years("4 Years in a similar role Comfort working with Microsoft Office"), (4.0, None))
+        self.assertEqual(years("Minimum solutioning experience of 10+ years with various segments"), (10.0, None))
+        self.assertEqual(years("Basic Qualifications: 5 years with BS/BA; 9 years with a high school diploma."), (5.0, None))
+        self.assertEqual(years("What We're Looking For\n7+ years of experience in procurement, sourcing"), (7.0, None))
+        self.assertEqual(years("Must-have:\n3–4 years of experience building native mobile applications"), (3.0, 4.0))
+        self.assertEqual(years("Bachelor's degree and 5+ years (Staff) or 8+ years (Senior) of relevant experience"), (5.0, None))
+        self.assertEqual(years("Qualifications\n3-8 years of Project Management, Assistant Project Management"), (3.0, 8.0))
+        self.assertEqual(years("project superintendent; 3-5 years minimum. OSHA 10"), (3.0, 5.0))
+        self.assertEqual(years("More than 1 year of experience working with individuals"), (1.0, None))
+        self.assertEqual(years("1+ years of experience delivering exceptional customer service"), (1.0, None))
+        self.assertEqual(years("Solid experience (2+ years) in Software Testing"), (2.0, None))
+
+    def test_ages_and_company_history_are_not_requirements(self) -> None:
+        for text in ("For more than 30 years, Bosch Service Solutions offers services", "Must be at least 18 years old.",
+                     "Building on 21 years of continuous growth and success", "With 60 years of experience across industries",
+                     "has spent nearly 20 years bringing communities together", "children from 2-15 years old",
+                     "4-week sabbatical after 4 years at Proxymity", "We have been 30 years in business serving clients",
+                     "a contractor with more than 30 years of experience delivering projects",
+                     "Requires 2-3 years of college-level courses"):
+            self.assertEqual(years(text), (None, None), text)
+
+
+class WorkModeTests(unittest.TestCase):
+    def mode(self, description: str) -> str:
+        return extract_job({"job_title": "x", "description": description})["work_mode"]
+
+    def test_stated_arrangements(self) -> None:
+        self.assertEqual(self.mode("This position is designated as onsite."), "Onsite")
+        self.assertEqual(self.mode("These positions are ON-SITE in Aurora Colorado."), "Onsite")
+        self.assertEqual(self.mode("Willing to work 5 days in the office per HR guideline"), "Onsite")
+        self.assertEqual(self.mode("Work environment: Fully onsite during regular business hours"), "Onsite")
+        self.assertEqual(self.mode("Eligible for some hybrid work flexibility, but regular in-office presence is expected."), "Hybrid")
+
+    def test_mentions_that_are_not_the_arrangement(self) -> None:
+        for text in ("providing on-site Manufacturing Engineering oversight", "present information in person to stakeholders",
+                     "hybrid-electric aircraft that takes off", "We support remote monitoring integration"):
+            self.assertEqual(self.mode(text), "", text)
+
+    def test_an_intern_title_beats_a_full_time_board_label(self) -> None:
+        job = extract_job({"job_title": "IT Support Intern", "description": "Resolve issues.", "structured_fields": {"job_type": "Full time"}})
+        self.assertEqual(job["job_type"], "internship")
+
+    def test_board_values_in_free_text(self) -> None:
+        job = extract_job({"job_title": "x", "description": "Great role.", "structured_fields": {"work_mode": "In-Office"}})
+        self.assertEqual(job["work_mode"], "Onsite")
+
+
+
+class LegacyPassTests(unittest.TestCase):
+    def test_pipeline_final_pass_keeps_the_extractors_results(self) -> None:
+        from job_extraction.jd_enricher import enrich
+        text = ("With 60 years of experience across industries, we offer medical, dental, 401k. "
+                "Strong contract negotiation skills. We use hybrid cloud tools.")
+        job = enrich(extract_job({"job_title": "Buyer", "description": text}))
+        self.assertEqual((job["salary_min"], job["experience_min"], job["work_mode"], job["job_type"]), (None, None, "", ""))
+        # Rows that never went through the extractor still get the old best-effort fill.
+        self.assertEqual(enrich({"job_title": "Buyer", "description": "Fully remote. 5+ years of SAP."})["work_mode"], "remote")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,42 @@
+name: Validate LinkedIn workflows
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/linkedin_*.yml
+      - dashboard/linkedin/**
+      - dashboard/job_extraction/**
+      - dashboard/db/linkedin_reposts.py
+      - dashboard/db/neon_upsert.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/linkedin_*.yml
+      - dashboard/linkedin/**
+      - dashboard/job_extraction/**
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: pip install httpx pandas openpyxl python-dotenv beautifulsoup4
+      - name: Verify extraction, repost evidence and CSV mapping
+        working-directory: dashboard
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -m unittest job_extraction.test_enrichment db.test_linkedin_reposts db.test_neon_upsert -v
+      - name: Verify all role ranges, sharding and the actual Excel export
+        working-directory: dashboard
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m unittest discover -s linkedin -p test_role_selection.py -v
+          python -m unittest discover -s linkedin -p test_linkedin_68_roles.py -v
