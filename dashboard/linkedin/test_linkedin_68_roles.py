@@ -61,6 +61,18 @@ SAMPLE_JOB_PAGE = """
 
 
 class LinkedInDetailParserTests(unittest.TestCase):
+    def test_repost_label_survives_detail_merge_and_enrichment(self):
+        html = SAMPLE_JOB_PAGE.replace('<body>', '<body><section class="top-card-layout">'
+                                       '<span class="posted-time-ago__text">Reposted 2 days ago</span></section>')
+        details = _parse_linkedin_detail_html(html)
+        self.assertTrue(details['reposted'])
+        job = {'job_title': 'Buyer', 'description': '', 'reposted': None}
+        _merge_job_details(job, details)
+        enriched = enrich_jobs_after_details([job])[0]
+        self.assertTrue(enriched['reposted'])
+        self.assertEqual(enriched['reposted_source'], 'linkedin_label')
+        self.assertNotIn('reposted', _parse_linkedin_detail_html(SAMPLE_JOB_PAGE))
+
     def test_extracts_and_enriches_required_fields(self) -> None:
         details = _parse_linkedin_detail_html(SAMPLE_JOB_PAGE)
         self.assertEqual(details["job_title"], "Senior Procurement Manager")

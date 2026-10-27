@@ -182,21 +182,24 @@ jobs:
           def write_csv(rows, path):
               if not rows: return
               with open(path, 'w', newline='', encoding='utf-8') as f:
-                  w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                  w = csv.DictWriter(f, fieldnames=list(dict.fromkeys(key for row in rows for key in row)))
                   w.writeheader(); w.writerows(rows)
               print(f'  {path}: {len(rows)} rows')
 
-          # -- mark reposts via job-id calibration (no login needed) -----------
+          # -- prefer scraped repost labels; mark ID fallbacks as estimates ---
           import sys, bisect
           from datetime import date, datetime, timedelta, timezone as tz
           sys.path.insert(0, 'db')
           try:
-              from linkedin_reposts import Calibration, SEED, annotate, linkedin_id
+              from linkedin_reposts import Calibration, SEED, annotate
               calibration = Calibration(SEED)
               all_rows = list(all_jobs.values())
               reposts = annotate(all_rows, calibration)
               all_jobs = {r.get('id',''): r for r in all_rows}
-              print(f'Reposts detected: {reposts} of {len(all_rows)}')
+              explicit = sum(r.get('reposted_confidence') == 'explicit' for r in all_rows)
+              estimated = sum(r.get('reposted_confidence') == 'estimated' for r in all_rows)
+              unknown = sum(r.get('reposted') is None for r in all_rows)
+              print(f'Repost evidence: {explicit} explicit, {estimated} estimated, {unknown} unknown; {reposts} flagged')
           except Exception as e:
               print(f'Repost detection skipped: {e}')
 

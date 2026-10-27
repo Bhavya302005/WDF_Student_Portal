@@ -420,6 +420,7 @@ def export_strict_datasets() -> None:
 _DETAIL_FIELDS = (
     "description", "job_title", "company", "location", "posted_at",
     "apply_url", "job_type", "experience", "work_mode", "is_remote",
+    "reposted", "reposted_source", "reposted_confidence", "reposted_evidence",
     "salary", "salary_min", "salary_max", "salary_currency", "salary_period",
     "skills", "education_requirements",
     "basic_qualifications", "preferred_qualifications", "key_responsibilities",
@@ -598,6 +599,8 @@ def _parse_linkedin_detail_html(page_html: str) -> dict[str, Any]:
         from bs4 import BeautifulSoup
 
         soup = BeautifulSoup(page_html, "html.parser")
+        from db.linkedin_reposts import header_evidence
+        details.update(header_evidence(soup))
         if not details.get("description"):
             node = soup.find(
                 ["div", "section"],
@@ -996,6 +999,10 @@ def scrape_role(
                 "salary_currency": salary_currency,
                 "job_type":        job_type,
                 "is_remote":       is_remote,
+                "reposted":        None,
+                "reposted_source": "unknown",
+                "reposted_confidence": "unknown",
+                "reposted_evidence": "",
                 "structured_fields": structured_fields,
                 "source_board":    "LinkedIn",
                 "scraper_type":    "jobspy",

@@ -244,8 +244,8 @@ class SaveJobsIntegrationTests(unittest.TestCase):
                  "job_url": "https://www.linkedin.com/jobs/view/4499999999", "description": "x"}]
         self.module.save_jobs(jobs)
         rows = {r[0]: r[1:] for r in self.query("SELECT id, reposted, first_posted_at::date::text, poster_name FROM public.jobs")}
-        self.assertEqual((True, "2026-08-07", "Doug Moebus"), rows["li-old"])  # an August id listed today
-        self.assertEqual(False, rows["li-new"][0])
+        self.assertEqual((True, None, "Doug Moebus"), rows["li-old"])  # inferred repost; no verified original date
+        self.assertIsNone(rows["li-new"][0])  # newer than the calibration: unknown
         # Seen again without the hiring team on its page: the poster stays
         self.module.save_jobs([{**jobs[0], "poster_name": "", "poster_title": "", "poster_url": ""}])
         self.assertEqual("Doug Moebus", self.query("SELECT poster_name FROM public.jobs WHERE id = 'li-old'")[0][0])

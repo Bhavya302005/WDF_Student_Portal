@@ -60,7 +60,9 @@ class RoleSelectionTests(unittest.TestCase):
             root = Path(tmp)
             (root / 'dashboard').mkdir()
             for shard, rows in enumerate(([
-                {'id': 'one', 'job_title': 'Buyer', 'description': 'Salary: $90-110K per year.', 'job_url': 'https://example.com/1'},
+                {'id': 'one', 'job_title': 'Buyer', 'description': 'Salary: $90-110K per year.',
+                 'job_url': 'https://www.linkedin.com/jobs/view/4999999999', 'reposted': True,
+                 'reposted_source': 'linkedin_label', 'reposted_confidence': 'explicit'},
             ], [
                 {'id': 'one', 'job_title': 'Buyer', 'description': 'Duplicate row', 'job_url': 'https://example.com/1'},
                 {'id': 'two', 'job_title': 'Manager', 'description': 'Manage sourcing.\nRequired: SQL.', 'job_url': 'https://example.com/2'},
@@ -75,7 +77,8 @@ class RoleSelectionTests(unittest.TestCase):
             try:
                 with patch.dict(os.environ, {'GITHUB_WORKSPACE': str(root), 'SCRAPER_DIR': 'dashboard',
                                              'ROLE_START': '1', 'ROLE_END': '23'}):
-                    exec(compile(code, 'workflow-merge', 'exec'), {})
+                    with patch.object(sys, 'path', [str(ROOT / 'dashboard'), str(ROOT / 'dashboard/db'), *sys.path]):
+                        exec(compile(code, 'workflow-merge', 'exec'), {})
             finally:
                 os.chdir(cwd)
             files = list((root / 'dashboard/deliverables').iterdir())
@@ -86,6 +89,10 @@ class RoleSelectionTests(unittest.TestCase):
             self.assertEqual(len(rows), 3)
             id_column = rows[0].index('id')
             self.assertEqual({r[id_column] for r in rows[1:]}, {'one', 'two'})
+            by_id = {r[id_column]: r for r in rows[1:]}
+            self.assertEqual(by_id['one'][rows[0].index('reposted_source')], 'linkedin_label')
+            self.assertEqual(by_id['one'][rows[0].index('repost_status')], 'Reposted')
+            self.assertEqual(by_id['two'][rows[0].index('repost_status')], 'Unknown')
             book.close()
 
 
