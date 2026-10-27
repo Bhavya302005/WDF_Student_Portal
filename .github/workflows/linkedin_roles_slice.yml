@@ -18,8 +18,38 @@ on:
         default: "week"
         type: choice
         options: [day, week, 3week, month, any]
+      commodity:
+        description: "✅ Commodity (Manager, Buyer, Lead, Specialist, Analyst)"
+        required: false
+        default: false
+        type: boolean
+      procurement:
+        description: "✅ Procurement (Manager, Specialist, Officer, Engineer, Head)"
+        required: false
+        default: false
+        type: boolean
+      sourcing:
+        description: "✅ Sourcing (Manager, Specialist, Lead, Strategic)"
+        required: false
+        default: false
+        type: boolean
+      buyer:
+        description: "✅ Buyer (Buyer, Senior Buyer, Junior Buyer, Associate)"
+        required: false
+        default: false
+        type: boolean
+      purchasing:
+        description: "✅ Purchasing (Manager, Agent, Coordinator, Supervisor)"
+        required: false
+        default: false
+        type: boolean
+      supply_chain:
+        description: "✅ Supply Chain (Analyst, Specialist, Lead, Manager)"
+        required: false
+        default: false
+        type: boolean
       roles:
-        description: "Specific roles to scrape (comma-separated substrings, e.g. 'Procurement,Buyer'). Leave empty for all."
+        description: "Custom filter (comma-separated, e.g. 'Procurement,Buyer'). Overrides checkboxes."
         required: false
         default: ""
         type: string
@@ -104,7 +134,18 @@ jobs:
           N=${{ inputs.shards || '8' }}
           SHARD="${{ matrix.shard }}/$N"
           cd "${{ steps.root.outputs.dir }}"
+          # Build role filter from checkboxes or custom input
           ROLE_FILTER="${{ inputs.roles }}"
+          if [ -z "$ROLE_FILTER" ]; then
+            PARTS=""
+            [ "${{ inputs.commodity }}" = "true" ]    && PARTS="${PARTS:+$PARTS,}Commodity"
+            [ "${{ inputs.procurement }}" = "true" ]  && PARTS="${PARTS:+$PARTS,}Procurement"
+            [ "${{ inputs.sourcing }}" = "true" ]     && PARTS="${PARTS:+$PARTS,}Sourcing"
+            [ "${{ inputs.buyer }}" = "true" ]        && PARTS="${PARTS:+$PARTS,}Buyer"
+            [ "${{ inputs.purchasing }}" = "true" ]   && PARTS="${PARTS:+$PARTS,}Purchasing"
+            [ "${{ inputs.supply_chain }}" = "true" ] && PARTS="${PARTS:+$PARTS,}Supply Chain"
+            ROLE_FILTER="$PARTS"
+          fi
           if [ -n "$ROLE_FILTER" ]; then
             IFS=',' read -ra ROLE_LIST <<< "$ROLE_FILTER"
             for ROLE in "${ROLE_LIST[@]}"; do
