@@ -28,20 +28,30 @@ jobs:
         run: |
           if [ -n "${{ secrets.SCRAPER_REPO }}" ] && \
              ! find . -name "discover_commoncrawl.py" -not -path "./.git/*" | grep -q .; then
+            echo "Cloning scraper repo..."
             git clone "https://${{ secrets.SCRAPER_PAT }}@github.com/${{ secrets.SCRAPER_REPO }}.git" _scrapers
+            echo "Clone contents:"
+            find _scrapers -maxdepth 3 -name "*.py" | head -30
+          else
+            echo "discover_commoncrawl.py already present or SCRAPER_REPO not set"
           fi
 
       - name: Find scraper root
         id: root
         run: |
-          if   find scrapers   -name "discover_commoncrawl.py" 2>/dev/null | grep -q .; then
-            echo "dir=scrapers" >> "$GITHUB_OUTPUT"
-          elif find _scrapers  -name "discover_commoncrawl.py" 2>/dev/null | grep -q .; then
-            echo "dir=$(dirname $(find _scrapers -name discover_commoncrawl.py | head -1))" >> "$GITHUB_OUTPUT"
-          elif find .          -name "discover_commoncrawl.py" -not -path "./.git/*" 2>/dev/null | grep -q .; then
-            echo "dir=$(dirname $(find . -name discover_commoncrawl.py -not -path './.git/*' | head -1))" >> "$GITHUB_OUTPUT"
+          echo "DEBUG: listing top-level dirs"
+          ls -d */ 2>/dev/null || true
+          echo "DEBUG: searching for discover_commoncrawl.py everywhere"
+          find . -name "discover_commoncrawl.py" -not -path "./.git/*" 2>/dev/null || true
+          echo "---"
+          FOUND=$(find . -name "discover_commoncrawl.py" -not -path "./.git/*" 2>/dev/null | head -1)
+          if [ -n "$FOUND" ]; then
+            DIR=$(dirname "$FOUND")
+            echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+            echo "Found at: $FOUND (dir=$DIR)"
           else
-            echo "ERROR: discover_commoncrawl.py not found" && exit 1
+            echo "ERROR: discover_commoncrawl.py not found anywhere"
+            exit 1
           fi
 
       - uses: actions/setup-python@v6
