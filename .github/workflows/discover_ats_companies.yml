@@ -1,0 +1,57 @@
+name: Discover ATS Companies (Common Crawl)
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to discover (comma-separated)"
+        required: false
+        default: "workday,oracle"
+        type: string
+      dry_run:
+        description: "Dry run (report only, don't add to company lists)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: ./scrapers
+        run: pip install --quiet httpx pandas python-dotenv
+
+      - name: Run Common Crawl discovery
+        working-directory: ./scrapers
+        run: |
+          IFS=',' read -ra PLATFORMS <<< "${{ inputs.platforms || 'workday,oracle' }}"
+          for platform in "${PLATFORMS[@]}"; do
+            platform=$(echo "$platform" | xargs)
+            echo "========================================"
+            echo "Discovering: $platform"
+            echo "========================================"
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              python3 discover_commoncrawl.py "$platform"
+            else
+              python3 discover_commoncrawl.py "$platform" --apply
+            fi
+          done
+
+      - name: Commit updated company lists
+        if: ${{ inputs.dry_run != true }}
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "feat: discover new ATS companies via Common Crawl"
+          file_pattern: "scrapers/workday/workday.csv scrapers/oracle/oracle.csv"
+          commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
