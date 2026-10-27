@@ -18,6 +18,11 @@ on:
         default: "week"
         type: choice
         options: [day, week, 3week, month, any]
+      roles:
+        description: "Specific roles to scrape (comma-separated substrings, e.g. 'Procurement,Buyer'). Leave empty for all."
+        required: false
+        default: ""
+        type: string
       shards:
         description: "Number of parallel runners"
         required: false
@@ -99,12 +104,28 @@ jobs:
           N=${{ inputs.shards || '8' }}
           SHARD="${{ matrix.shard }}/$N"
           cd "${{ steps.root.outputs.dir }}"
-          python3 linkedin/linkedin_68_roles.py \
-            --post-time "${{ inputs.post_time || 'week' }}" \
-            --shard     "$SHARD" \
-            --max-results all \
-            --start-idx "${{ env.ROLE_START }}" \
-            --end-idx   "${{ env.ROLE_END }}"
+          ROLE_FILTER="${{ inputs.roles }}"
+          if [ -n "$ROLE_FILTER" ]; then
+            IFS=',' read -ra ROLE_LIST <<< "$ROLE_FILTER"
+            for ROLE in "${ROLE_LIST[@]}"; do
+              ROLE=$(echo "$ROLE" | xargs)
+              echo "--- Scraping role: $ROLE ---"
+              python3 linkedin/linkedin_68_roles.py \
+                --post-time "${{ inputs.post_time || 'week' }}" \
+                --shard     "$SHARD" \
+                --max-results all \
+                --start-idx "${{ env.ROLE_START }}" \
+                --end-idx   "${{ env.ROLE_END }}" \
+                --role      "$ROLE"
+            done
+          else
+            python3 linkedin/linkedin_68_roles.py \
+              --post-time "${{ inputs.post_time || 'week' }}" \
+              --shard     "$SHARD" \
+              --max-results all \
+              --start-idx "${{ env.ROLE_START }}" \
+              --end-idx   "${{ env.ROLE_END }}"
+          fi
 
       - name: Upload shard CSV
         if: always()
