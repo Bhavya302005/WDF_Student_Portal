@@ -42,6 +42,10 @@ class RowsToFreeTests(unittest.TestCase):
 
 
 class MapJobTests(unittest.TestCase):
+    def test_repost_csv_flags_keep_true_false_and_unknown_separate(self):
+        for value, expected in ((True, True), ('True', True), ('False', False), ('', None), (None, None), ('unknown', None)):
+            self.assertIs(map_job({'id': 'repost', 'job_title': 'Buyer', 'reposted': value})['reposted'], expected)
+
     def test_canonical_fields_win_over_aliases_regardless_of_order(self) -> None:
         row = map_job({
             "id": "a", "job_title": "Buyer",

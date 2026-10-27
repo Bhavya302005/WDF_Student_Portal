@@ -76,6 +76,7 @@ from datetime import datetime, date, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
+from role_selection import select_roles
 
 # -- Dependency checks --------------------------------------------------------
 try:
@@ -419,6 +420,7 @@ def export_strict_datasets() -> None:
 _DETAIL_FIELDS = (
     "description", "job_title", "company", "location", "posted_at",
     "apply_url", "job_type", "experience", "work_mode", "is_remote",
+    "reposted", "reposted_source", "reposted_confidence", "reposted_evidence",
     "salary", "salary_min", "salary_max", "salary_currency", "salary_period",
     "skills", "education_requirements",
     "basic_qualifications", "preferred_qualifications", "key_responsibilities",
@@ -597,6 +599,8 @@ def _parse_linkedin_detail_html(page_html: str) -> dict[str, Any]:
         from bs4 import BeautifulSoup
 
         soup = BeautifulSoup(page_html, "html.parser")
+        from db.linkedin_reposts import header_evidence
+        details.update(header_evidence(soup))
         if not details.get("description"):
             node = soup.find(
                 ["div", "section"],
@@ -995,6 +999,10 @@ def scrape_role(
                 "salary_currency": salary_currency,
                 "job_type":        job_type,
                 "is_remote":       is_remote,
+                "reposted":        None,
+                "reposted_source": "unknown",
+                "reposted_confidence": "unknown",
+                "reposted_evidence": "",
                 "structured_fields": structured_fields,
                 "source_board":    "LinkedIn",
                 "scraper_type":    "jobspy",
@@ -1075,11 +1083,16 @@ def main() -> None:
         action="store_true",
         help="Resume from last saved state",
     )
-    parser.add_argument(
+    role_filter = parser.add_mutually_exclusive_group()
+    role_filter.add_argument(
         "--role",
         type=str,
         default=None,
         help="Scrape only one role (case-insensitive substring match)",
+    )
+    role_filter.add_argument(
+        "--roles",
+        help="Comma-separated role filters; resolve the combined selection before sharding",
     )
     parser.add_argument(
         "--limit",
@@ -1190,34 +1203,13 @@ def main() -> None:
     global _deadline
     budget = args.time_budget if args.time_budget is not None else TIME_BUDGET_MIN
     _deadline = time.monotonic() + budget * 60 if budget else None
-    roles_to_run = ROLES
-    if args.role:
-        roles_to_run = [r for r in ROLES if args.role.lower() in r.lower()]
-        if not roles_to_run:
-            log.error(f"No role matching '{args.role}' in the 68-role list.")
-            return
-        log.info(f"  Filtered to {len(roles_to_run)} role(s) by name: {roles_to_run}")
-
-    if args.start_idx or args.end_idx:
-        start_i = max(0, (args.start_idx or 1) - 1)
-        end_i = args.end_idx if args.end_idx is not None else len(roles_to_run)
-        roles_to_run = roles_to_run[start_i:end_i]
-
-    if args.limit:
-        roles_to_run = roles_to_run[:args.limit]
-        log.info(f"  Limited to top {len(roles_to_run)} role(s)")
-
-    if args.shard:
-        try:
-            part, total = map(int, args.shard.split("/"))
-            chunk_size = math.ceil(len(roles_to_run) / total)
-            start_i = (part - 1) * chunk_size
-            end_i = min(len(roles_to_run), part * chunk_size)
-            roles_to_run = roles_to_run[start_i:end_i]
-            log.info(f"  Shard {args.shard}: running roles {start_i + 1} through {end_i} ({len(roles_to_run)} roles)")
-        except Exception as e:
-            log.error(f"Invalid shard format '{args.shard}': {e}")
-            return
+    filters = args.roles.split(',') if args.roles is not None else ([args.role] if args.role else None)
+    try:
+        roles_to_run = select_roles(ROLES, filters=filters, start_idx=args.start_idx,
+                                    end_idx=args.end_idx, limit=args.limit, shard=args.shard)
+    except ValueError as exc:
+        parser.error(str(exc))
+    log.info(f"  Shard {args.shard or 'all'}: {len(roles_to_run)} roles: {roles_to_run}")
 
     run_jobs:       list[dict] = []
     coverage:       list[tuple] = []  # (role, jobs LinkedIn listed, new jobs kept, note)

@@ -39,33 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ["1", "2", "3", "4", "5", "6", "7", "8",
-                "9", "10", "11", "12", "13", "14", "15", "16"]
-        exclude:
-          - shard: ${{ inputs.shards == '4'  && '5'  || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '6'  || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '7'  || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '8'  || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '9'  || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '10' || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '11' || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '12' || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '13' || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '14' || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '15' || 'x' }}
-          - shard: ${{ inputs.shards == '4'  && '16' || 'x' }}
-          - shard: ${{ inputs.shards == '8'  && '9'  || 'x' }}
-          - shard: ${{ inputs.shards == '8'  && '10' || 'x' }}
-          - shard: ${{ inputs.shards == '8'  && '11' || 'x' }}
-          - shard: ${{ inputs.shards == '8'  && '12' || 'x' }}
-          - shard: ${{ inputs.shards == '8'  && '13' || 'x' }}
-          - shard: ${{ inputs.shards == '8'  && '14' || 'x' }}
-          - shard: ${{ inputs.shards == '8'  && '15' || 'x' }}
-          - shard: ${{ inputs.shards == '8'  && '16' || 'x' }}
-          - shard: ${{ inputs.shards == '12' && '13' || 'x' }}
-          - shard: ${{ inputs.shards == '12' && '14' || 'x' }}
-          - shard: ${{ inputs.shards == '12' && '15' || 'x' }}
-          - shard: ${{ inputs.shards == '12' && '16' || 'x' }}
+        shard: ${{ fromJSON(inputs.shards == '4' && '[1,2,3,4]' || inputs.shards == '12' && '[1,2,3,4,5,6,7,8,9,10,11,12]' || inputs.shards == '16' && '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]' || '[1,2,3,4,5,6,7,8]') }}
 
     steps:
       - uses: actions/checkout@v5
@@ -102,30 +76,19 @@ jobs:
       - name: Scrape shard ${{ matrix.shard }}/${{ inputs.shards || '8' }}
         env:
           LINKEDIN_LI_AT: ${{ secrets.LINKEDIN_LI_AT }}
+          ROLE_FILTER: ${{ inputs.roles }}
+          POST_TIME: ${{ inputs.post_time || 'week' }}
+          SHARD_COUNT: ${{ inputs.shards || '8' }}
+          SHARD_NUMBER: ${{ matrix.shard }}
         run: |
-          N=${{ inputs.shards || '8' }}
-          SHARD="${{ matrix.shard }}/$N"
           cd "${{ steps.root.outputs.dir }}"
-          ROLE_FILTER="${{ inputs.roles }}"
+          args=(--post-time "$POST_TIME" --shard "$SHARD_NUMBER/$SHARD_COUNT" --max-results all)
           if [ -n "$ROLE_FILTER" ]; then
-            IFS=',' read -ra ROLE_LIST <<< "$ROLE_FILTER"
-            for ROLE in "${ROLE_LIST[@]}"; do
-              ROLE=$(echo "$ROLE" | xargs)
-              echo "--- Scraping role: $ROLE ---"
-              python3 linkedin/linkedin_68_roles.py \
-                --post-time "${{ inputs.post_time || 'week' }}" \
-                --shard     "$SHARD" \
-                --max-results all \
-                --role      "$ROLE"
-            done
+            args+=(--roles "$ROLE_FILTER")
           else
-            python3 linkedin/linkedin_68_roles.py \
-              --post-time "${{ inputs.post_time || 'week' }}" \
-              --shard     "$SHARD" \
-              --max-results all \
-              --start-idx "${{ env.ROLE_START }}" \
-              --end-idx   "${{ env.ROLE_END }}"
+            args+=(--start-idx "$ROLE_START" --end-idx "$ROLE_END")
           fi
+          python3 linkedin/linkedin_68_roles.py "${args[@]}"
 
       - name: Upload shard CSV
         if: always()
@@ -134,7 +97,7 @@ jobs:
           name: shard-${{ matrix.shard }}
           retention-days: 3
           path: |
-            ${{ steps.root.outputs.dir }}/linkedin/linkedin_jobs/*shard*
+            ${{ steps.root.outputs.dir }}/linkedin/linkedin_jobs/linkedin_shard_*_jobs.csv
 
   # -- Merge shards, enrich JDs, build Excel ----------------------------------
   deliver:
@@ -207,53 +170,47 @@ jobs:
                   print(f'  skip {path}: {e}')
                   return []
 
-          all_jobs    = {}
-          strict_jobs = {}
+          all_jobs = {}
           base = os.path.join(workspace, 'scraped_data')
           print(f'Looking for shards in: {base}')
           for f in sorted(glob.glob(f'{base}/**/linkedin_shard_*_jobs.csv', recursive=True)):
               for j in read_shard(f):
                   all_jobs.setdefault(j.get('id',''), j)
-          for f in sorted(glob.glob(f'{base}/**/linkedin_shard_*_jobs_strict.csv', recursive=True)):
-              for j in read_shard(f):
-                  strict_jobs.setdefault(j.get('id',''), j)
 
           os.makedirs('linkedin/linkedin_jobs', exist_ok=True)
 
           def write_csv(rows, path):
               if not rows: return
               with open(path, 'w', newline='', encoding='utf-8') as f:
-                  w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                  w = csv.DictWriter(f, fieldnames=list(dict.fromkeys(key for row in rows for key in row)))
                   w.writeheader(); w.writerows(rows)
               print(f'  {path}: {len(rows)} rows')
 
-          # -- mark reposts via job-id calibration (no login needed) -----------
+          # -- prefer scraped repost labels; mark ID fallbacks as estimates ---
           import sys, bisect
           from datetime import date, datetime, timedelta, timezone as tz
           sys.path.insert(0, 'db')
           try:
-              from linkedin_reposts import Calibration, SEED, annotate, linkedin_id
+              from linkedin_reposts import Calibration, SEED, annotate
               calibration = Calibration(SEED)
               all_rows = list(all_jobs.values())
               reposts = annotate(all_rows, calibration)
               all_jobs = {r.get('id',''): r for r in all_rows}
-              strict_rows = list(strict_jobs.values())
-              annotate(strict_rows, calibration)
-              strict_jobs = {r.get('id',''): r for r in strict_rows}
-              print(f'Reposts detected: {reposts} of {len(all_rows)}')
+              explicit = sum(r.get('reposted_confidence') == 'explicit' for r in all_rows)
+              estimated = sum(r.get('reposted_confidence') == 'estimated' for r in all_rows)
+              unknown = sum(r.get('reposted') is None for r in all_rows)
+              print(f'Repost evidence: {explicit} explicit, {estimated} estimated, {unknown} unknown; {reposts} flagged')
           except Exception as e:
               print(f'Repost detection skipped: {e}')
 
           write_csv(list(all_jobs.values()),    'linkedin/linkedin_jobs/linkedin_jobs_all.csv')
-          write_csv(list(strict_jobs.values()), 'linkedin/linkedin_jobs/linkedin_jobs_strict.csv')
-          print(f'Merged: {len(all_jobs)} all, {len(strict_jobs)} strict')
+          print(f'Merged: {len(all_jobs)} jobs')
 
           # -- enrich merged CSVs with job_extraction --------------------------
           from pathlib import Path
           try:
               from job_extraction.enrich_csv import enrich_csv
-              for csv_path in ['linkedin/linkedin_jobs/linkedin_jobs_all.csv',
-                               'linkedin/linkedin_jobs/linkedin_jobs_strict.csv']:
+              for csv_path in ['linkedin/linkedin_jobs/linkedin_jobs_all.csv']:
                   p = Path(csv_path)
                   if p.exists() and p.stat().st_size > 0:
                       n = enrich_csv(p, board='LinkedIn')
@@ -280,10 +237,6 @@ jobs:
               return clean(df)
 
           all_df    = load('linkedin/linkedin_jobs/linkedin_jobs_all.csv')
-          strict_df = load('linkedin/linkedin_jobs/linkedin_jobs_strict.csv')
-          strict_ids = set(strict_df['id'].dropna()) if 'id' in strict_df.columns else set()
-          other_df  = all_df[~all_df.get('id', pd.Series(dtype=str)).isin(strict_ids)].copy() \
-                      if not all_df.empty else pd.DataFrame()
 
           os.makedirs('deliverables', exist_ok=True)
           s = os.environ.get('ROLE_START','0')
@@ -291,13 +244,8 @@ jobs:
           label = f"roles_{s}_to_{e}"
 
           with pd.ExcelWriter(f'deliverables/jobs_{label}.xlsx', engine='openpyxl') as w:
-              indexed(strict_df).to_excel(w, sheet_name='Strict', index=False)
-              indexed(other_df).to_excel(w,  sheet_name='Other',  index=False)
               indexed(all_df).to_excel(w,    sheet_name='All',    index=False)
-          print(f'jobs_{label}.xlsx: strict={len(strict_df)} other={len(other_df)} all={len(all_df)}')
-
-          indexed(all_df).to_csv(f'deliverables/all_jobs_{label}.csv', index=False)
-          indexed(strict_df).to_csv(f'deliverables/strict_jobs_{label}.csv', index=False)
+          print(f'jobs_{label}.xlsx: all={len(all_df)}')
           PYEOF
 
       - name: Upload deliverables
@@ -305,4 +253,4 @@ jobs:
         with:
           name: linkedin-jobs-${{ env.ROLE_START }}-${{ env.ROLE_END }}
           retention-days: 7
-          path: ${{ steps.root.outputs.dir }}/deliverables/
+          path: ${{ steps.root.outputs.dir }}/deliverables/jobs_roles_${{ env.ROLE_START }}_to_${{ env.ROLE_END }}.xlsx

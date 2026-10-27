@@ -672,7 +672,7 @@ def map_job(raw: dict) -> dict:
         "extraction":              Jsonb(extraction) if extraction is not None else None,
         "job_url":                 _text(job.get("job_url") or job.get("url") or job.get("link")),
         "apply_url":               _text(job.get("apply_url") or job.get("apply_link")),
-        "reposted":                job.get("reposted") if isinstance(job.get("reposted"), bool) else None,
+        "reposted":                _normalize_reposted(job.get("reposted")),
         "first_posted_at":         _parse_posted_at(job.get("first_posted_at")),
         "poster_name":             _text(job.get("poster_name")),
         "poster_title":            _text(job.get("poster_title")),
@@ -791,8 +791,17 @@ def save_jobs(jobs: list[dict], batch_size: int = 500, *, expire_missing: bool =
     return total
 
 
+def _normalize_reposted(value) -> bool | None:
+    """CSV booleans survive ingestion; blank or missing flags stay unknown."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ('true', 'false'):
+        return value.strip().lower() == 'true'
+    return None
+
+
 def _mark_linkedin_reposts(rows: list[dict], main_url: str) -> None:
-    """Fresh or reposted for LinkedIn jobs, from their ids (linkedin_reposts.py); learns today's ids."""
+    """Preserve scraped flags; use bounded ID estimates only where evidence is absent."""
     linkedin = [row for row in rows if (row.get("source_board") or "").lower() == "linkedin"]
     if not linkedin:
         return
@@ -807,7 +816,7 @@ def _mark_linkedin_reposts(rows: list[dict], main_url: str) -> None:
             linkedin_reposts.learn(conn, linkedin_reposts.todays_points(linkedin))
             conn.commit()
         log.info(f"LinkedIn: {reposts} of {len(linkedin)} jobs are reposts")
-        _summary(f"- LinkedIn reposts: {reposts} of {len(linkedin)} jobs were first posted earlier")
+        _summary(f"- LinkedIn repost flags: {reposts} of {len(linkedin)} (explicit evidence or ID estimates)")
     except Exception as exc:  # the flag is extra information; never block saving jobs on it
         log.warning(f"  Repost check skipped: {exc}")
 
