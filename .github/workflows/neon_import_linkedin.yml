@@ -1,0 +1,70 @@
+name: Import completed LinkedIn roles 1-45 into Neon
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Upsert validated results (false validates and reports only)
+        type: boolean
+        default: false
+  push:
+    branches: [chore/neon-job-cleanup]
+    paths:
+      - .github/workflows/neon_import_linkedin.yml
+      - dashboard/db/import_linkedin_results.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: neon-linkedin-1-45-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      JOBS_DATABASE_URL_2: ${{ secrets.JOBS_DATABASE_URL_2 }}
+      JOBS_DATABASE_URL_3: ${{ secrets.JOBS_DATABASE_URL_3 }}
+      JOBS_DATABASE_URL_4: ${{ secrets.JOBS_DATABASE_URL_4 }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install 'psycopg[binary]>=3.2,<4' openpyxl
+      - name: Download completed roles 1-23 All workbook
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '40575690613'
+          name: linkedin-jobs-1-23
+          path: linkedin-import-input/roles-1-23
+      - name: Download completed roles 24-45 All workbook
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '40576973278'
+          name: linkedin-jobs-24-45
+          path: linkedin-import-input/roles-24-45
+      - name: Validate input and optionally upsert without expiration
+        env:
+          APPLY: ${{ inputs.apply || false }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          args=()
+          if [ "$APPLY" = 'true' ]; then
+            args+=(--apply)
+          fi
+          python dashboard/db/import_linkedin_results.py "${args[@]}"
+      - name: Save import counts and verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkedin-1-45-import-report-${{ github.run_id }}
+          path: linkedin-import-report.json
+          if-no-files-found: error
+          retention-days: 30
