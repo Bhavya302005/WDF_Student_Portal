@@ -32,7 +32,7 @@ log = logging.getLogger("discover_commoncrawl")
 HERE = Path(__file__).parent
 COLLINFO = "https://index.commoncrawl.org/collinfo.json"
 UA = {"User-Agent": "getworkin-company-discovery/1.0 (job listings aggregator)"}
-SNAPSHOTS = 3     # the latest monthly crawls
+SNAPSHOTS = 12    # the latest monthly crawls
 MAX_PAGES = 40    # index pages per snapshot (as freehire)
 PROBES = 8        # probes at a time
 
