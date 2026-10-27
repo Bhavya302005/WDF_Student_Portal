@@ -1,0 +1,161 @@
+name: ADP and iCIMS USA CSV (parallel slices)
+
+on:
+  workflow_dispatch:
+    inputs:
+      boards_per_slice:
+        description: Boards per slice (50 creates 121 parallel matrix jobs for the full catalog)
+        type: number
+        default: 50
+      max_boards:
+        description: Maximum boards per provider (0 means all boards)
+        type: number
+        default: 0
+  push:
+    branches: [feat/adp-icims-csv-workflow]
+    paths:
+      - .github/workflows/adp_icims_csv.yml
+      - tools/ats_export/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adp-icims-csv-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      matrix: ${{ steps.slices.outputs.matrix }}
+      catalog_hash: ${{ steps.slices.outputs.catalog_hash }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - uses: actions/cache@v4
+        with:
+          path: |
+            tools/ats_export/.cache/go/pkg/mod
+            tools/ats_export/.cache/go-build
+          key: ats-export-go-${{ runner.os }}-${{ hashFiles('tools/ats_export/upstream.json', 'tools/ats_export/bridge/*.go') }}
+          restore-keys: ats-export-go-${{ runner.os }}-
+      - name: Test partitioning, merge, and extraction
+        run: python -m unittest discover -s tools/ats_export -p 'test_*.py' -v
+      - name: Build and test pinned adapters once
+        run: python tools/ats_export/build.py --test
+      - name: Partition all boards without overlap
+        id: slices
+        env:
+          SLICE_SIZE: ${{ inputs.boards_per_slice || 50 }}
+          MAX_BOARDS: ${{ inputs.max_boards || 0 }}
+        run: >-
+          python tools/ats_export/pipeline.py prepare
+          --boards-per-slice "$SLICE_SIZE" --max-boards "$MAX_BOARDS"
+          --output tools/ats_export/plan --github-output "$GITHUB_OUTPUT"
+      - name: Package shared runtime
+        run: tar -czf /tmp/ats-runtime.tar.gz -C tools/ats_export bin plan upstream.json FREEHIRE_LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ats-runtime
+          path: /tmp/ats-runtime.tar.gz
+          overwrite: true
+          retention-days: 3
+
+  crawl:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    name: Crawl ${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ats-runtime
+          path: /tmp/ats-runtime
+      - run: tar -xzf /tmp/ats-runtime/ats-runtime.tar.gz -C tools/ats_export
+      - name: Restore this slice's detail cache
+        uses: actions/cache/restore@v4
+        with:
+          path: tools/ats_export/state
+          key: ats-state-${{ needs.prepare.outputs.catalog_hash }}-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ats-state-${{ needs.prepare.outputs.catalog_hash }}-${{ matrix.id }}-
+      - name: Fetch complete descriptions and extract fields
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          SLICE_ID: ${{ matrix.id }}
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python tools/ats_export/pipeline.py crawl
+          --catalog "tools/ats_export/plan/slices/$SLICE_ID.json"
+          --provider "$PROVIDER" --slice-id "$SLICE_ID"
+          --workers 8 --board-timeout 5m
+          --output tools/ats_export/output
+      - name: Upload jobs and failures even after a partial crawl
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ats-slice-${{ matrix.id }}
+          path: tools/ats_export/output/
+          overwrite: true
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 7
+      - name: Save this slice's detail cache
+        if: always() && !cancelled()
+        uses: actions/cache/save@v4
+        with:
+          path: tools/ats_export/state
+          key: ats-state-${{ needs.prepare.outputs.catalog_hash }}-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  csv:
+    name: Merge CSV exports and coverage report
+    needs: [prepare, crawl]
+    if: always() && needs.prepare.result == 'success' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ats-runtime
+          path: /tmp/ats-runtime
+      - run: tar -xzf /tmp/ats-runtime/ats-runtime.tar.gz -C tools/ats_export
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ats-slice-*
+          path: /tmp/ats-slices
+          merge-multiple: false
+      - name: Merge and deduplicate successful jobs
+        run: >-
+          python tools/ats_export/pipeline.py merge
+          --manifest tools/ats_export/plan/manifest.json
+          --input /tmp/ats-slices --output tools/ats_export/csv
+          --github-summary "$GITHUB_STEP_SUMMARY"
+      - name: Downloadable CSV files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adp-icims-usa-csv
+          path: tools/ats_export/csv/
+          overwrite: true
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 14
