@@ -63,7 +63,7 @@ jobs:
           - shard: ${{ inputs.shards == '12' && '16' || 'x' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Fetch scraper code (only if this repo has none)
         run: |
@@ -87,7 +87,7 @@ jobs:
             echo "ERROR: linkedin_68_roles.py not found" && exit 1
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -108,7 +108,7 @@ jobs:
 
       - name: Upload shard CSV
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: shard-${{ matrix.shard }}
           retention-days: 3
@@ -122,7 +122,7 @@ jobs:
     if: always()
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Fetch scraper code (only if this repo has none)
         run: |
@@ -146,7 +146,7 @@ jobs:
             echo "dir=." >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -157,7 +157,7 @@ jobs:
         run: echo "PYTHONPATH=${{ steps.root.outputs.dir }}" >> "$GITHUB_ENV"
 
       - name: Download all shard artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: shard-*
           path: scraped_data
@@ -263,7 +263,7 @@ jobs:
           PYEOF
 
       - name: Upload deliverables
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linkedin-jobs-${{ env.ROLE_START }}-${{ env.ROLE_END }}
           retention-days: 7
