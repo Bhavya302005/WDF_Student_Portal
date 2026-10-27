@@ -268,6 +268,23 @@ jobs:
                   w.writeheader(); w.writerows(rows)
               print(f'  {path}: {len(rows)} rows')
 
+          # -- mark reposts via job-id calibration (no login needed) -----------
+          import sys, bisect
+          from datetime import date, datetime, timedelta, timezone as tz
+          sys.path.insert(0, 'db')
+          try:
+              from linkedin_reposts import Calibration, SEED, annotate, linkedin_id
+              calibration = Calibration(SEED)
+              all_rows = list(all_jobs.values())
+              reposts = annotate(all_rows, calibration)
+              all_jobs = {r.get('id',''): r for r in all_rows}
+              strict_rows = list(strict_jobs.values())
+              annotate(strict_rows, calibration)
+              strict_jobs = {r.get('id',''): r for r in strict_rows}
+              print(f'Reposts detected: {reposts} of {len(all_rows)}')
+          except Exception as e:
+              print(f'Repost detection skipped: {e}')
+
           write_csv(list(all_jobs.values()),    'linkedin/linkedin_jobs/linkedin_jobs_all.csv')
           write_csv(list(strict_jobs.values()), 'linkedin/linkedin_jobs/linkedin_jobs_strict.csv')
           print(f'Merged: {len(all_jobs)} all, {len(strict_jobs)} strict')
