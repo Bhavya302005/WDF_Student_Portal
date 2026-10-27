@@ -3,6 +3,9 @@
 
 def select_roles(roles, *, filters=None, start_idx=1, end_idx=None, limit=None, shard=None):
     selected = list(dict.fromkeys(roles))
+    # Workflow ranges own disjoint sections of the catalog. Filters narrow that
+    # range rather than pulling similarly named roles from another workflow.
+    selected = selected[max(0, (start_idx or 1) - 1):end_idx]
     if filters is not None:
         terms = list(dict.fromkeys(term.strip().casefold() for term in filters if term.strip()))
         if not terms:
@@ -12,7 +15,6 @@ def select_roles(roles, *, filters=None, start_idx=1, end_idx=None, limit=None, 
             raise ValueError('No role matching: ' + ', '.join(unknown))
         # Overlapping filters select a role once, preserving catalog order.
         selected = [role for role in selected if any(term in role.casefold() for term in terms)]
-    selected = selected[max(0, (start_idx or 1) - 1):end_idx]
     if limit:
         selected = selected[:limit]
     if shard:

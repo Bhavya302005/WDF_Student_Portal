@@ -373,10 +373,18 @@ def enrich(raw: dict[str,Any]) -> dict[str,Any]:
                 break
     out["posted_at"] = found_date
 
+    # Rows that went through job_extraction.extract_job already carry its evidence-checked
+    # salary, work mode, job type and experience. The guesses below are looser ("401k" read
+    # as pay, "60 years of experience across industries" read as a requirement, "contract
+    # negotiation" read as a contract job), so they only fill rows the extractor never saw.
+    extracted = isinstance(raw.get("extraction"), dict) and str(raw["extraction"].get("version", "")).startswith("jd-")
+
     # 6. Salary — prefer explicit numeric fields, fall back to text parsing
     sal_min = raw.get("salary_min")
     sal_max = raw.get("salary_max")
-    if sal_min is None and sal_max is None:
+    if extracted:
+        pass
+    elif sal_min is None and sal_max is None:
         sal_text = _first(raw, _SAL_TEXT_KEYS)
         if not sal_text:
             # Try to find salary mention inside description
@@ -401,18 +409,19 @@ def enrich(raw: dict[str,Any]) -> dict[str,Any]:
             if sal_text:
                 out["salary_currency"] = parse_salary(str(sal_text)).get("salary_currency")
 
-    # 7. Work mode + is_remote
-    wm = detect_work_mode(raw)
-    out["work_mode"] = wm
-    out["is_remote"] = wm == "remote"
+    if not extracted:
+        # 7. Work mode + is_remote
+        wm = detect_work_mode(raw)
+        out["work_mode"] = wm
+        out["is_remote"] = wm == "remote"
 
-    # 8. Employment type
-    out["job_type"] = detect_job_type(raw)
+        # 8. Employment type
+        out["job_type"] = detect_job_type(raw)
 
-    # 9. Experience range
-    exp_min, exp_max = extract_experience(raw)
-    out["experience_min"] = exp_min
-    out["experience_max"] = exp_max
+        # 9. Experience range
+        exp_min, exp_max = extract_experience(raw)
+        out["experience_min"] = exp_min
+        out["experience_max"] = exp_max
 
     # 10. Education
     if not out.get("education_requirements"):

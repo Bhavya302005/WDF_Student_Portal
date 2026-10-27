@@ -1,0 +1,36 @@
+name: LinkedIn Roles 24-45
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      post_time:
+        description: "How far back to look for jobs"
+        required: false
+        default: week
+        type: choice
+        options: [day, week, 3week, month, any]
+      roles:
+        description: "Comma-separated filters within roles 24-45; blank runs the whole range."
+        required: false
+        default: "Head of Procurement, Procurement Officer, Procurement Coordinator, Procurement Engineer, Procurement Assistant, Sourcing Manager, Sourcing Specialist, Strategic Sourcing Manager, Senior Manager Strategic Sourcing, Senior Sourcing Analyst, Senior Sourcing Manager, Senior Sourcing Specialist, Assistant Sourcing Manager, Global Sourcing Lead, Senior Manager Global Sourcing, Strategic Sourcing Specialist, Sourcing Lead, Buyer, Senior Buyer, Purchasing Manager, Purchasing Representative, Procurement Buyer"
+        type: string
+      shards:
+        description: "Number of parallel runners"
+        required: false
+        default: "8"
+        type: choice
+        options: ["4", "8", "12", "16"]
+
+jobs:
+  scrape:
+    uses: ./.github/workflows/linkedin_roles_slice.yml
+    with:
+      role_start: 24
+      role_end: 45
+      post_time: ${{ inputs.post_time || 'week' }}
+      roles: ${{ inputs.roles }}
+      shards: ${{ inputs.shards || '8' }}
+    secrets: inherit

@@ -1,15 +1,38 @@
-name: LinkedIn Roles Scraper (Slice)
+name: LinkedIn Roles 1-23
 
-# -- Which slice of the 68 roles this repo runs -------------------------------
-# Repo A (roles 1-23):  ROLE_START=1   ROLE_END=23
-# Repo B (roles 24-45): ROLE_START=24  ROLE_END=45
-# Repo C (roles 46-68): ROLE_START=46  ROLE_END=68
-# Change these two lines per repo -- everything else stays identical.
+# Shared implementation; the other two workflow entries call this file.
 env:
-  ROLE_START: "1"
-  ROLE_END: "23"
+  ROLE_START: ${{ inputs.role_start || 1 }}
+  ROLE_END: ${{ inputs.role_end || 23 }}
+
+permissions:
+  contents: read
 
 on:
+  workflow_call:
+    inputs:
+      role_start:
+        type: number
+        default: 1
+      role_end:
+        type: number
+        default: 23
+      post_time:
+        type: string
+        default: week
+      roles:
+        type: string
+        default: ""
+      shards:
+        type: string
+        default: "8"
+    secrets:
+      LINKEDIN_LI_AT:
+        required: false
+      SCRAPER_REPO:
+        required: false
+      SCRAPER_PAT:
+        required: false
   workflow_dispatch:
     inputs:
       post_time:
@@ -19,7 +42,7 @@ on:
         type: choice
         options: [day, week, 3week, month, any]
       roles:
-        description: "Roles to scrape (comma-separated, substring match). Edit to add/remove any role."
+        description: "Comma-separated filters within this role range; blank runs the whole range."
         required: false
         default: "Senior Commodity Manager, Commodity Manager, Commodity Buyer, Commodity Lead, Purchasing Commodity Manager, Senior Commodity Buyer, Global Supply Chain Analyst, Global Supply Chain Specialist, Global Supply Chain Lead, Global Sourcing Specialist, Global Commodity Manager, Global Supply Chain Manager, Commodity Specialist, Procurement Manager, Procurement Specialist, Senior Procurement Specialist, Senior Procurement Manager, Assistant Procurement Manager, Procurement Associate, Senior Procurement Analyst, Senior Procurement Officer, Senior Procurement Engineer, Senior Procurement Consultant"
         type: string
@@ -82,11 +105,10 @@ jobs:
           SHARD_NUMBER: ${{ matrix.shard }}
         run: |
           cd "${{ steps.root.outputs.dir }}"
-          args=(--post-time "$POST_TIME" --shard "$SHARD_NUMBER/$SHARD_COUNT" --max-results all)
+          args=(--post-time "$POST_TIME" --shard "$SHARD_NUMBER/$SHARD_COUNT" --max-results all
+                --start-idx "$ROLE_START" --end-idx "$ROLE_END")
           if [ -n "$ROLE_FILTER" ]; then
             args+=(--roles "$ROLE_FILTER")
-          else
-            args+=(--start-idx "$ROLE_START" --end-idx "$ROLE_END")
           fi
           python3 linkedin/linkedin_68_roles.py "${args[@]}"
 

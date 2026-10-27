@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import re
 
-VERSION = 'jd-v5'
+VERSION = 'jd-v7'
 
 _BOUNDARY = re.compile(r'[;\n]|[.!?](?=\s|$)')
 
@@ -59,7 +59,7 @@ def requirement(text, start, end):
     return 'mentioned'
 
 
-_CURRENCY = r'(?:US\$|CA\$|C\$|AU\$|A\$|NZ\$|SG\$|S\$|HK\$|USD|CAD|AUD|NZD|SGD|HKD|INR|GBP|EUR|CHF|JPY|AED|SAR|SEK|NOK|DKK|PLN|BRL|ZAR|[$£€₹¥])'
+_CURRENCY = r'(?:USD\$|CAD\$|AUD\$|US\$|CA\$|C\$|AU\$|A\$|NZ\$|SG\$|S\$|HK\$|USD|CAD|AUD|NZD|SGD|HKD|INR|GBP|EUR|CHF|JPY|AED|SAR|SEK|NOK|DKK|PLN|BRL|ZAR|[$£€₹¥])'
 _NUMBER = r'\d+(?:[,.]\d+)*'
 _UNIT = r'(?:crores?|lakhs?|lacs?|LPA|Cr|k|m|l)\b'
 _MONEY = re.compile(
@@ -67,9 +67,18 @@ _MONEY = re.compile(
     rf'(?:\s*(?:[-–—]|\bto\b)\s*(?:(?P<c2>{_CURRENCY})\s*)?(?P<n2>{_NUMBER})\s*(?P<u2>{_UNIT})?)?'
     rf'(?:\s*(?P<suffix>{_CURRENCY})(?!\w))?', re.I)
 _PAY = re.compile(r'\b(?:salary|salaries|pay|paid|compensation|wage|wages|remuneration|earnings|OTE|on[- ]target earnings|bonus|commission|stipend)\b', re.I)
+_EMPLOYEE_PAY = re.compile(r'\b(?:salary|salaries|base\s+pay|pay\s+range|compensation|wage|wages|remuneration|earnings|OTE|on[- ]target earnings|bonus|commission)\b', re.I)
 _MONEY_MARKER = re.compile(rf'{_CURRENCY}|{_UNIT}', re.I)
+_MEASUREMENT_MONEY = re.compile(
+    r'\b(?:sq\.?\s*(?:ft|feet|m|meters?)|square\s+(?:feet|foot|meters?)|acres?|lbs?\.?|pounds?|'
+    r'kilograms?|kg|miles?|kilometers?|km)\b', re.I)
+_BUSINESS_MONEY = re.compile(
+    r'\b(?:capital\s+projects?|project\s+(?:value|values|budget|budgets|worth)|procurement\s+(?:spend|budget|risks?)|'
+    r'annual\s+spend|managed\s+spend|budget(?:s|ed)?|revenue|assets?|sales|contract\s+value|cost\s+savings?|'
+    r'funding|valuation|portfolio(?:\s+(?:value|worth|valued))?|deal\s+size|transaction\s+value|'
+    r'market\s+cap(?:italization)?|assets?\s+under\s+management|AUM|ARR|EBITDA|GMV|book\s+of\s+business|P\s*&\s*L)\b', re.I)
 _PERIODS = {
-    'hour': r'(?:/\s*h(?:r|our)?\b|\b(?:per|an?|each)\s+(?:hour|hr)\b|\bhourly\b|\b(?:per uur|pro Stunde|de l\'heure|por hora)\b|\bstündlich)',
+    'hour': r'(?:/\s*h(?:r|our)?\b|(?<=\d)\s*hr\b|\b(?:per|an?|each)\s+(?:hour|hr)\b|\bhourly\b|\b(?:per uur|pro Stunde|de l\'heure|por hora)\b|\bstündlich)',
     'year': r'(?:/\s*(?:yr|year)\b|\b(?:per|an?|each)\s+(?:year|yr|annum)\b|\bannual(?:ly)?\b|\bLPA\b|\b(?:per jaar|pro Jahr|par an|al año|annuel(?:le)?|brut annuel)\b|\bjährlich)',
     'month': r'(?:/\s*(?:mo|month)\b|\b(?:per|an?|each)\s+(?:month|mo)\b|\bmonthly\b|\b(?:per maand|pro Monat|par mois|al mes|mensuel(?:le)?|monatlich)\b)',
     'week': r'(?:/\s*(?:wk|week)\b|\b(?:per|an?|each)\s+week\b|\bweekly\b)',
@@ -79,7 +88,7 @@ _PERIODS = {
 
 def currency_of(text):
     tokens = re.findall(_CURRENCY, text, re.I)
-    mapping = {'US$': 'USD', 'CA$': 'CAD', 'C$': 'CAD', 'AU$': 'AUD', 'A$': 'AUD',
+    mapping = {'USD$': 'USD', 'CAD$': 'CAD', 'AUD$': 'AUD', 'US$': 'USD', 'CA$': 'CAD', 'C$': 'CAD', 'AU$': 'AUD', 'A$': 'AUD',
                'NZ$': 'NZD', 'SG$': 'SGD', 'S$': 'SGD', 'HK$': 'HKD', '£': 'GBP', '€': 'EUR', '₹': 'INR'}
     found = {mapping.get(t.upper(), t.upper()) for t in tokens if t not in ('$', '¥')}
     found = {t for t in found if len(t) == 3 and t.isalpha()}
@@ -113,7 +122,25 @@ def salary_candidates(text, field='description', source='jd'):
         snippet = evidence(text, match.start(), match.end(), field, context=True)
         context = snippet['text']
         before = text[max(snippet['start'], match.start() - 90):match.start()]
+        if not before.strip():
+            # An amount on its own line is labelled by the line above ("Base Pay Range:\n$30,000 — $50,000").
+            line_start = text.rfind('\n', 0, match.start())
+            if line_start > 0 and not text[line_start:match.start()].strip():
+                above = text[text.rfind('\n', 0, line_start) + 1:line_start]
+                if 0 < len(above.strip()) <= 90 and above.rstrip().endswith(':'):
+                    before = above + '\n'
         after = text[match.end():min(snippet['end'], match.end() + 55)]
+        local_context = before[-90:] + match.group() + after
+        explicit_employee_pay = bool(_EMPLOYEE_PAY.search(before[-90:]) or _EMPLOYEE_PAY.search(after))
+        # A bare m/M is too ambiguous in a JD: it commonly means metres or a
+        # million-dollar project/company metric. Require an explicit employee-pay
+        # label before accepting it as salary. Business values and measurements
+        # are never compensation candidates merely because they contain "$".
+        million_unit = any((g.get(name) or '').lower() == 'm' for name in ('u1', 'u2'))
+        if ((_MEASUREMENT_MONEY.search(local_context) and not explicit_employee_pay) or
+                (_BUSINESS_MONEY.search(local_context) and not explicit_employee_pay) or
+                (million_unit and source == 'jd' and not explicit_employee_pay)):
+            continue
         # "401k" / "403(b)" are retirement plans, not pay.
         if re.match(r'\s*\(?\s*[kb]\s*\)?', text[match.end('n1'):match.end('n1') + 4], re.I) and g['n1'] in ('401', '403', '457'):
             continue
@@ -123,10 +150,14 @@ def salary_candidates(text, field='description', source='jd'):
             continue
         if re.match(r'\s*(?:%|years?\b|yrs?\b|days?\s+(?:of\s+)?(?:PTO|leave)|countries\b|employees\b|people\b)', after, re.I):
             continue
-        if re.search(r'\b(?:401\s*\(?k\)?|funding|revenue|valuation|budget|sales target|insurance coverage|life insurance)\b', before[-65:], re.I):
+        if re.search(r'\b(?:401\s*\(?k\)?|funding|funded|raised|revenue|valuation|budget|sales target|insurance coverage|life insurance|'
+                     r'investors?|series [a-e]|seed|ARR|deals?|contracts? (?:worth|valued)|quota|pipeline|portfolio|assets under|AUM|'
+                     r'investments? of|customers? with)\b[^.\n]{0,30}$', before[-65:], re.I):
             continue
         if re.match(r'\s*(?:in\s+)?(?:funding|revenue|valuation|budget|insurance coverage)\b', after, re.I):
             continue
+        if re.match(r'\s*(?:billion|million|trillion|bn|mn|milliarden?|millionen|milliards?|millions?|billions?|mil millones|crores? of)\b', after, re.I):
+            continue  # "revenue of CHF 11.20 billion", "projects of at least $5 Million"
         if not money_signal and re.search(r'\b(?:experience|team|founded|since)\b', before[-45:], re.I):
             continue
         if not g['c1'] and not g['u1'] and re.fullmatch(r'(?:19|20)\d{2}', g['n1']):
@@ -143,6 +174,8 @@ def salary_candidates(text, field='description', source='jd'):
                 low *= 1000
         except (InvalidOperation, ValueError):
             continue
+        if low > high and g['n2'] and high > 0 and low <= 3 * high:
+            low, high = high, low  # "$271,000 - $216,800": typed the wrong way round
         if low > high or low < 0 or high > 1_000_000_000:
             continue
         qualifiers = before[-40:].lower()
@@ -153,13 +186,23 @@ def salary_candidates(text, field='description', source='jd'):
                 high = None
         # Component and period are local to this amount, not another pay range.
         component = 'unspecified'
-        labels = list(re.finditer(r'\b(base(?: salary| pay)?|OTE|on[- ]target earnings|total compensation|bonus|commission|equity|stock)\b', before, re.I))
+        labels = list(re.finditer(r'\b(base(?: salary| pay)?|OTE|on[- ]target earnings|total compensation|bonus|commission|equity|stock|'
+                                  r'salary|compensation|pay(?: range| rate)?|wages?|hourly rate|rate of pay|earnings)\b', before, re.I))
         if labels:
             label = labels[-1].group().lower()
-            component = 'base' if label.startswith('base') else 'ote' if label == 'ote' or label.startswith('on') else 'total' if label.startswith('total') else 'equity' if label in ('equity', 'stock') else label
+            component = ('base' if label.startswith('base') else 'ote' if label == 'ote' or label.startswith('on') else
+                         'total' if label.startswith('total') else 'equity' if label in ('equity', 'stock') else
+                         label if label in ('bonus', 'commission') else 'unspecified')
         elif re.search(r'^\s*(?:annual\s+)?(?:bonus|commission)\b', after, re.I):
             component = 'bonus' if 'bonus' in after.lower() else 'commission'
-        local = before[-35:] + match.group() + after
+        # Money that is not the job's pay: perks, one-off payments, add-ons to the base rate.
+        perk = _PERK_BEFORE.search(before[-70:])
+        if perk and re.search(r'\b(?:salary|compensation|pay|wages?|rate|earnings)\b', perk.group(), re.I) and \
+                not re.search(r'\b(?:salary|compensation|pay|wages?|rate|earnings)\b', perk.group(1) if perk.lastindex else '', re.I):
+            perk = None  # "Sign on bonus. Competitive Compensation: $118k": the pay label comes after the perk
+        if component == 'unspecified' and (perk or _PERK_AFTER.match(after)):
+            continue  # benefits/perks are not salary candidates
+        local = _HOURS_PER.sub(' ', before[-35:]) + match.group() + _HOURS_PER.sub(' ', after)
         periods = [period for period, pattern in _PERIODS.items() if re.search(pattern, local, re.I)]
         period = periods[0] if len(periods) == 1 else None
         currency = currency_of(match.group()) or currency_of(before[-20:])
@@ -167,13 +210,33 @@ def salary_candidates(text, field='description', source='jd'):
         region = re.search(r'(?:^|[.;\n])\s*([^\n;:.]{2,70}):\s*$', before)
         region_name = region.group(1).strip() if region else None
         if region_name and _PAY.search(region_name):
-            region_name = None
+            # "New Jersey Base Pay Range:" names a region; "Salary:" / "Pay Range:" alone does not.
+            place = re.sub(r'\b(?:base|annual|hourly|total|target|starting|estimated|expected|anticipated|the|for|this|role|'
+                           r'position|range|zone|band|tier|salary|salaries|pay|compensation|wages?|rate|earnings|OTE)\b', ' ',
+                           region_name, flags=re.I)
+            region_name = region_name if len(re.sub(r'[\W\d_]+', '', place)) >= 3 else None
         results.append({'min': low, 'max': high, 'currency': currency, 'period': period,
                         'component': component, 'location': region_name,
                         'text': match.group().strip(), 'evidence': snippet, 'source': source,
                         'status': 'explicit' if currency and period else 'needs_context',
+                        'marked': bool(money_signal), 'labeled': bool(_PAY.search(before[-30:])),
                         '_span': (match.start(), match.end())})
     return [{k: v for k, v in item.items() if k != '_span'} for item in _merge_between(text, results)]
+
+
+_HOURS_PER = re.compile(r'\b\d+(?:\.\d+)?\s*\+?\s*(?:hours?|hrs?)\b[^.\n$£€]{0,25}?(?:per|a|each|every|/)\s*(?:week|wk|month|day)\b', re.I)
+_PERK_BEFORE = re.compile(
+    r'\b((?:referr\w*|sign(?:ing|[- ]on)|relocation|stipend|reimburs\w*|allowance|budget|tuition|worth|funding|'
+    r'donation|matching|differential|per diem|tips?|incentives?|overtime|OT|premium|increase|raise|each sale|'
+    r'per (?:sale|referral|client)|gift|credit|discount|fee|costs?|prices?|benefits? package|insurance|'
+    r'retention|annual leave|PTO|loan|equipment|home office|learning|development|wellness|gym|commuter|'
+    r'shift (?:diff\w*|premium)|night shift|weekend|on[- ]call|car|vehicle|mileage|fuel|phone|vouchers?|wallet|cards?|'
+    r'meals?|lunch|food|transport\w*|travel|internet|mobile|childcare|pension|401k|HSA|FSA|deals?|'
+    r'reembolso|bono|subsidio|ayuda|prime|indemnit\w+|Zuschuss|Prämie|Gutschein|rimborso|buono))\b[^.\n$£€]{0,40}$', re.I)
+_PERK_AFTER = re.compile(
+    r'^\s*(?:per\s+(?:referral|sale|client|mile|unit|shift|visit|session|delivery|placement|hire)\b|'
+    r'(?:\w+\s+){0,3}(?:shift\s+)?differential\b|(?:sign(?:ing|[- ]on)|retention|referral|relocation)\s+bonus\b|'
+    r'(?:in\s+)?(?:stipend|reimbursement|allowance|budget|credit|tips)\b|\+\s*tips\b)', re.I)
 
 
 # "between €2.650 and €2.800" is one range, not two salaries.
@@ -254,7 +317,13 @@ def skill_candidates(text, field='description', source='jd'):
 _WORK_PATTERNS = [
     # "hybrid cloud/vehicle/app" is technology, not a work arrangement.
     ('Hybrid', re.compile(r'\bhybrid\b(?![- ]?(?:cloud|vehicles?|cars?|apps?|applications?|mobile|electric|energy|engines?|seeds?|infrastructure|environments?|it\b|integration|architectures?|solutions?|systems?|workflows?|integrated|approach(?:es)?|models? of care|funds?|securities|instruments?|methodolog\w*|tech\w*|storage|networks?|events?|meetings?|interviews?|learning|classes|courses?))|\b(?:one|two|three|four|five|\d+)\s+(?:remote|office|on[- ]?site)\s+days?\s+(?:a|per|each)\s+week\b|\b(?:one|two|three|four|five|\d+)(?:\s*(?:-|to|or)\s*(?:one|two|three|four|five|\d+))?\s+days?\s+(?:a|per|each|every)\s+week\s+(?:in|at|from)\s+(?:the\s+|our\s+|an?\s+)?(?:[\w&.\'’-]+\s+){0,3}(?:office|studio|hq|headquarters|campus)\b|\bin[- ](?:the[- ])?office\s+(?:one|two|three|four|five|\d+)(?:\s*(?:-|to)\s*\d+)?\s+days\b|\b(?:one|two|three|four|five|\d+)\s+days?\s+(?:in[- ]office|on[- ]?site).*?(?:one|two|three|four|five|\d+)\s+days?\s+remote(?:ly)?\b', re.I)),
-    ('Onsite', re.compile(r'\b(?:on[- ]?site|in[- ]office|in[- ]person)\s+(?:role|position|job|work|schedule)\b|\b(?:work|performed|based|required to work)\s+(?:fully\s+)?(?:on[- ]?site|in[- ]office|in[- ]person)\b|\breport to (?:the )?office\b|\b(?:no|not|non)[ -]+remote\b', re.I)),
+    ('Onsite', re.compile(r'\b(?:on[- ]?site|in[- ]office|in[- ]person)\s+(?:role|position|job|work|schedule)\b|\b(?:work|performed|based|required to work)\s+(?:fully\s+)?(?:on[- ]?site|in[- ]office|in[- ]person)\b|\breport to (?:the )?office\b|\b(?:no|not|non)[ -]+remote\b'
+                          r'|\b(?:position|role|job|opportunity)s?\s+(?:is|are)\s+(?:designated\s+as\s+|considered\s+|fully\s+|100%\s+|an?\s+)?(?:on[- ]?site|in[- ]office|in[- ]person)\b'
+                          r'|\b(?:performed|located|based)\s+(?:\w+\s+){0,3}(?:on[- ]?site|in[- ]office)\s+(?:at|in)\b'
+                          r'|\b(?:on[- ]?site|in[- ]office)\s+(?:attendance|presence)\s+(?:is\s+)?(?:required|mandatory|expected)\b'
+                          r'|\b(?:requires?|required)\s+(?:\w+\s+){0,3}(?:on[- ]?site|in[- ]office)\s+(?:attendance|presence|work)\b'
+                          r'|\b(?:5|five)\s+days\s+(?:a\s+week\s+|per\s+week\s+)?in\s+(?:the|our)\s+office\b'
+                          r'|\b(?:fully|100%)\s+(?:on[- ]?site|in[- ]office|in[- ]person)\b', re.I)),
     ('Remote', re.compile(r'\b(?:fully|100%)\s+remote\b|\bremote[- ](?:first|only|friendly|eligible)\b|\bremote\s+(?:role|position|job|work|opportunity|within)\b|\b(?:work from home|WFH)\b|\bremote\s+(?:in|across|from)\s+(?:the\s+)?(?:US|U\.S\.|USA|United States|UK|Canada|Europe|EMEA|LATAM|India|country)\b|\b(?:US|U\.S\.|USA)[- ]based\s+remote\b|\b(?:this|the)\s+(?:position|role|job|opportunity)\s+(?:is|can be)\s+(?:fully\s+|100%\s+)?(?:remote|performed remotely)\b|\bwork remotely from (?:anywhere|home)\b', re.I)),
 ]
 
@@ -263,14 +332,15 @@ _WORK_PATTERNS = [
 # In person" footer). Markdown bullets/bold around the label are tolerated.
 _LABEL = r'(?:^|(?<=[\s*•.]))[*•\-\s]*\**\s*(?:{})\s*\**\s*:\s*\**\s*'
 _LABELED_WORK = re.compile(_LABEL.format(r'Work Location|Workplace Type|Work Arrangement|Work Model|Workplace Model|Workplace|Work Type|Location Type|Work Setting|Work Environment|Remote Status|Job Location Type|Work Mode|Working Model|Location')
-                           + r'(?P<value>hybrid(?: remote)?|fully remote|remote|in[- ]person|on[- ]?site)\b', re.I | re.M)
+                           + r'(?P<value>hybrid(?: remote)?|fully remote|remote|in[- ]person|(?:fully |100% )?on[- ]?site)\b', re.I | re.M)
 _TYPE_VALUE = (r'(?:(?:regular|permanent)\s+)?(?:full[- ]?time|part[- ]?time)(?:\s*[-,]?\s*(?:regular|permanent))?'
                r'|contract(?:or)?|temporary|temp|internship|seasonal|CDI|CDD|Vollzeit|Teilzeit|alternance|stage')
 _LABELED_TYPE = re.compile(_LABEL.format(r'Job Types?|Employment Type|Type of Employment|Employment Status|Position Type|Job Status|'
                                          r'Schedule|Work Schedule|Contract Type|Type de contrat|Vertragsart|Anstellungsart|Beschäftigungsart')
                            + rf'(?P<value>(?:{_TYPE_VALUE})(?:\s*,\s*(?:{_TYPE_VALUE}))*)\b', re.I | re.M)
 _LABEL_VALUES = {'hybrid': 'Hybrid', 'hybrid remote': 'Hybrid', 'remote': 'Remote', 'fully remote': 'Remote',
-                 'in person': 'Onsite', 'onsite': 'Onsite', 'on site': 'Onsite',
+                 'in person': 'Onsite', 'onsite': 'Onsite', 'on site': 'Onsite', 'fully onsite': 'Onsite', 'fully on site': 'Onsite',
+                 '100% onsite': 'Onsite', '100% on site': 'Onsite',
                  'full time': 'full_time', 'fulltime': 'full_time', 'part time': 'part_time', 'parttime': 'part_time',
                  'contract': 'contract', 'contractor': 'contract', 'temporary': 'temporary', 'temp': 'temporary',
                  'seasonal': 'temporary', 'internship': 'internship',
@@ -311,6 +381,10 @@ def work_mode(text):
             found.append({'value': value, 'status': 'explicit', 'source': 'jd',
                           'evidence': evidence(text, match.start(), match.end(), context=True), '_position': match.start()})
     values = {item['value'] for item in found}
+    if values == {'Hybrid', 'Onsite'}:
+        # Hybrid roles also describe their office days ("hybrid, with regular in-office presence").
+        found = [item for item in found if item['value'] == 'Hybrid']
+        values = {'Hybrid'}
     if len(values) == 1:
         result = min(found, key=lambda item: item['_position'])
         result.pop('_position', None)
@@ -362,7 +436,7 @@ _YEARS_NUMBER = r'(?:\d+(?:\.\d+)?|' + '|'.join(_NUMBER_WORDS) + r')'
 _YEARS = (rf'(?P<low>{_YEARS_NUMBER})\s*(?:\(\s*\d+\s*\)\s*)?(?:(?:[-–—]|to)\s*(?P<high>{_YEARS_NUMBER})\s*)?'
           r'(?P<plus>\+|\s*plus\b|\s*or more\b)?\s*(?:years?|yrs?)[\'’]?')
 # Ages and company history are not experience requirements.
-_NOT_EXPERIENCE = re.compile(r'\s*(?:of\s+age\b|old\b|or older\b|of\s+service\b|in business\b|of (?:history|operation)\b|warranty\b)', re.I)
+_NOT_EXPERIENCE = re.compile(r'\s*(?:of\s+age\b|of\s+(?:college|university|school|courses?|coursework|study|studies|education)\b|old\b|or older\b|of\s+service\b|in business\b(?!\s+(?:development|analy\w+|intelligence|operations|administration|management|systems|process\w*|partner\w*|banking|finance))|of (?:history|operation)\b|warranty\b)', re.I)
 _EXPERIENCE_PATTERNS = [
     # "5+ years of SAP experience", "3 years' experience", "2 years working with"
     re.compile(rf'\b{_YEARS}\s+(?:(?:of\s+)?(?:[\w+#.&/-]+\s+){{0,5}}experience\b|(?:working|work)\s+(?:with|in|on)\b'
@@ -372,8 +446,31 @@ _EXPERIENCE_PATTERNS = [
                r'(?!age\b)(?:[\w+#.&/-]+\s*){1,6}(?=[,.;\n]|$)', re.I),
     # "minimum of 6 years’ ...", "at least five years in ..."
     re.compile(rf'\b(?:minimum(?: of)?|at least|requires?|required|must have|with|having|bring|possess)\s+{_YEARS}\s+'
-               r'(?:of\s+|in\s+)?(?!age\b)(?:[\w+#.&/-]+\s*){1,6}(?=[,.;\n]|$)', re.I),
+               r'(?:of\s+|in\s+)?(?!age\b)(?:[\w+#.&/-]+\s*){1,8}(?=[,.;\n]|$)', re.I),
+    # A range is a requirement: "3-8 years of Project Management", "3-5 years minimum"
+    re.compile(rf'\b(?P<low>{_YEARS_NUMBER})\s*(?:[-–—]|to)\s*(?P<high>{_YEARS_NUMBER})\s*(?:years?|yrs?)[\'’]?\s+(?:of|in)\s+[A-Za-z]', re.I),
+    re.compile(rf'\b{_YEARS}\s+(?:minimum|required|preferred)\b', re.I),
+    # Run-on text without punctuation: "2+ years in business development or sales roles Track record ..."
+    re.compile(rf'\b(?P<low>{_YEARS_NUMBER})\s*(?:(?:[-–—]|to)\s*(?P<high>{_YEARS_NUMBER})\s*)?(?P<plus>\+|\s*plus\b|\s*or more\b)?\s*'
+               r'(?:years?|yrs?)[\'’]?\s+(?:of|in|as)\s+(?!age\b)(?:[\w+#.&/-]+\s+){0,6}?'
+               r'(?:experience|roles?|positions?|field|industry|environments?|settings?|capacity|function)\b', re.I),
+    # Labelled: "Work Experience: 2-4 years", "Experience: 3+ years", "experience of 10+ years"
+    re.compile(rf'\b(?:(?:work|relevant|professional|required|minimum|total)\s+)?experience(?:\s+(?:required|level|needed))?'
+               rf'\s*(?:[:\-–]|of(?:\s+(?:at least|minimum|over))?)\s*[*\s]*{_YEARS}', re.I),
+    # "Solid experience (2+ years) in Software Testing"
+    re.compile(rf'\bexperience\s*\(\s*{_YEARS}\s*\)', re.I),
+    # Indeed's qualification lines: "Technical support or help desk: 3–4 years (Required)"
+    re.compile(rf'(?<![\w])(?P<label>[A-Za-z][^\n:]{{2,80}}):\s*{_YEARS}\s*\((?P<req>Required|Preferred)\)', re.I),
+    # Levels: "5+ years (Staff) or 8+ years (Senior) of relevant experience"
+    re.compile(rf'\b{_YEARS}\s*\((?:[^)\n]{{1,30}})\)(?=[^.\n]{{0,80}}\bexperience\b)', re.I),
+    # Degree alternatives: "5 years with BS/BA; 9 years with a high school diploma"
+    re.compile(rf'\b{_YEARS}\s+(?:of\s+(?:\w+\s+){{0,3}}experience\s+)?with\s+(?:an?\s+)?(?:BS|BA|B\.S\.?|B\.A\.?|MS|MA|MBA|PhD|'
+               r'bachelor\w*|master\w*|associate\w*|degree|high school|HS|GED)\b', re.I),
 ]
+# "For over 30 years, Acme has ...", "celebrating 100 years": the company's age, not a requirement.
+_HISTORY_BEFORE = re.compile(r'\b(?:for|over|nearly|almost|more than|than|past|last|celebrating|spent|since|founded|'
+                             r'anniversary|ago|history of|legacy of|in business(?: for)?)\s*(?:the\s+(?:past|last)\s+)?'
+                             r'(?:over\s+|nearly\s+|almost\s+|more than\s+)?$', re.I)
 
 
 def _years_value(token):
@@ -388,7 +485,7 @@ def experience_candidates(text):
     for pattern in _EXPERIENCE_PATTERNS:
         for match in pattern.finditer(text):
             unit = re.search(r'(?:years?|yrs?)[\'’]?', match.group(), re.I)
-            if unit and _NOT_EXPERIENCE.match(match.group(), unit.end()):
+            if unit and _NOT_EXPERIENCE.match(text, match.start() + unit.end()):
                 continue
             low, high = _years_value(match['low']), _years_value(match.groupdict().get('high'))
             if low is None or low > 40 or (high is not None and (high < low or high > 40)):
@@ -396,8 +493,22 @@ def experience_candidates(text):
             start = match.start('low')
             if any(abs(start - other) < 3 for other in seen):
                 continue
+            line_before = text[max(0, start - 40):start].rsplit('\n', 1)[-1]  # a heading above is not "for 30 years"
+            # Company histories run long ("for over 30 years"); "more than 1 year of experience" is a requirement.
+            long_span = low >= 10
+            if long_span and _HISTORY_BEFORE.search(line_before) and not re.search(
+                    r'\b(?:minimum|at least|requires?|required|must)\b', line_before, re.I):
+                continue
+            following = text[match.end():match.end() + 40]
+            if long_span and re.match(r'\s*(?:of\s+)?(?:serving|helping|providing|delivering|bringing|experience across|combined experience)\b', following, re.I) \
+                    or ('experience' not in match.group().lower() and not match.groupdict().get('plus') and
+                        re.match(r'\s*(?:of\s+)?(?:continuous|growth|history|service|operation|excellence|innovation|building)\b', following, re.I)):
+                continue
             seen.add(start)
-            out.append({'min': low, 'max': high, 'requirement': requirement(text, match.start(), match.end()),
+            groups = match.groupdict()
+            req = (groups['req'].lower() if groups.get('req') else
+                   'alternative' if pattern in _EXPERIENCE_PATTERNS[-2:] else requirement(text, match.start(), match.end()))
+            out.append({'min': low, 'max': high, 'requirement': req,
                         'source': 'jd', 'status': 'explicit', 'evidence': evidence(text, match.start(), match.end(), context=True)})
     return out
 
@@ -592,7 +703,13 @@ def _canonical(key, val):
     normalized = re.sub(r'[_-]+', ' ', raw).strip()
     canonical = mapping.get(raw) or mapping.get(normalized)
     if key == 'work_mode':
-        return canonical if canonical in _WORK_MODES else None
+        if canonical in _WORK_MODES:
+            return canonical
+        # Free-text board values: "In-Office", "Remote - US", "Hybrid (3 days)", "Fully Remote".
+        found = {mode for mode, pattern in (('Remote', r'\bremote\b'), ('Hybrid', r'\bhybrid\b'),
+                                            ('Onsite', r'\b(?:on ?site|in office|in person|office based)\b'))
+                 if re.search(pattern, normalized) and not re.search(r'\b(?:not|non|no)\s+' + pattern[2:], normalized)}
+        return found.pop() if len(found) == 1 else None
     if canonical in _JOB_TYPES:
         return canonical
     if re.search(r'\bfull\s*time\b', normalized): return 'full_time'
@@ -642,6 +759,8 @@ def _rules(text, title, source, location=''):
     for key, obj in (('work_mode', modes), ('job_type', types)):
         val = sf.get(key)
         canonical = _canonical(key, val)
+        if key == 'job_type' and obj['value'] == 'internship' and canonical in ('full_time', 'part_time'):
+            canonical = None  # "IT Support Intern" listed as Full time: an internship (often full-time)
         if canonical:
             if obj['value'] and canonical != obj['value']:
                 obj.update(value=None, status='conflict', candidates=[obj.copy(), {'value': canonical, 'source': 'board'}])
@@ -662,6 +781,138 @@ def _rules(text, title, source, location=''):
             'education': education, 'model': {'status': 'disabled'}}
 
 
+_DOLLAR_COUNTRIES = [
+    ('CAD', re.compile(r'\b(?:canada|toronto|vancouver|montr[eé]al|calgary|ottawa|edmonton|winnipeg|mississauga|'
+                       r'quebec|ontario|british columbia|alberta)\b|,\s*(?:ON|BC|AB|QC|MB|SK|NS|NB|NL|PE)\b(?!\s*,?\s*(?:US|USA)\b)', re.I)),
+    ('AUD', re.compile(r'\b(?:australia|sydney|melbourne|brisbane|perth|adelaide|canberra|NSW|VIC|QLD)\b', re.I)),
+    ('NZD', re.compile(r'\b(?:new zealand|auckland|wellington|christchurch)\b', re.I)),
+    ('SGD', re.compile(r'\bsingapore\b', re.I)),
+    ('HKD', re.compile(r'\bhong kong\b', re.I)),
+]
+# Plausible pay per period in major currencies; outside these it is a typo or not pay.
+_PAY_BOUNDS = {'hour': (7, 1000), 'day': (40, 10_000), 'week': (150, 40_000), 'month': (400, 200_000), 'year': (8_000, 1_500_000)}
+_PAY_CURRENCIES = {'USD', 'CAD', 'AUD', 'NZD', 'SGD', 'GBP', 'EUR', 'CHF'}
+_REGION_STOP = {'base', 'pay', 'range', 'salary', 'total', 'compensation', 'for', 'the', 'and', 'in', 'of', 'this', 'role',
+                'position', 'annual', 'hourly', 'zone', 'tier', 'location', 'locations', 'based', 'candidates', 'market'}
+
+
+def dollar_currency(location):
+    """Which dollar a bare "$" means, from the job's location (US dollars unless it says otherwise)."""
+    for code, pattern in _DOLLAR_COUNTRIES:
+        if pattern.search(location or ''):
+            return code
+    return 'USD'
+
+
+_COUNTRY_CURRENCY = {'US': 'USD', 'GB': 'GBP', 'IN': 'INR', 'DE': 'EUR', 'NL': 'EUR', 'FR': 'EUR', 'ES': 'EUR', 'IE': 'EUR',
+                     'IT': 'EUR', 'AU': 'AUD', 'SG': 'SGD', 'CA': 'CAD', 'NZ': 'NZD'}
+
+
+def local_currency(location):
+    """The currency of the country a location names, or None when it names none."""
+    for code, pattern in _DOLLAR_COUNTRIES:
+        if pattern.search(location or ''):
+            return code
+    from .jd_enricher import infer_country
+    return _COUNTRY_CURRENCY.get(infer_country(location or '') or '')
+
+
+def _resolve(candidate, location):
+    """Fill a candidate's currency ("$" by location) and period (by size); None when it cannot be pay."""
+    c = dict(candidate)
+    if not c.get('currency') and '$' in (c.get('text') or ''):
+        c['currency'] = dollar_currency(location)
+        c['currency_inferred'] = True
+    elif not c.get('currency') and c.get('source') == 'board':
+        # A board's numeric salary field without a currency: the job's own country's.
+        c['currency'] = local_currency(location)
+        c['currency_inferred'] = bool(c['currency'])
+    top = c['max'] if c['max'] is not None else c['min']
+    if top is None:
+        return None
+    if c.get('currency') in _PAY_CURRENCIES or (not c.get('currency') and c.get('marked')):
+        if c.get('period') and not _PAY_BOUNDS[c['period']][0] <= top <= _PAY_BOUNDS[c['period']][1]:
+            # "$60,000 - $80,000 per hour": the period word belonged to another amount.
+            c['period'] = None
+        if not c.get('period'):
+            c['period'] = 'year' if top >= 15_000 else 'hour' if 7 <= top <= 100 else None
+            c['period_inferred'] = bool(c['period'])
+        if not c['period']:
+            return None
+    if c.get('currency') and c.get('period'):
+        c['status'] = 'explicit' if not (c.get('currency_inferred') or c.get('period_inferred')) else 'inferred'
+    c['text'] = format_salary(c['min'], c['max'], c.get('currency'), c.get('period'))
+    return c
+
+
+def select_salary(candidates, location=''):
+    """The job's pay among the amounts found, or (None, candidates) when it cannot be told apart.
+
+    Returns (selected, primary): primary is the pool the choice was made from.
+    """
+    pool = [c for c in candidates if c['component'] == 'base'] or \
+           [c for c in candidates if c['component'] == 'unspecified']
+    fallback = not pool
+    if fallback:
+        # Only on-target / total compensation stated: better than nothing, labelled as such.
+        pool = [c for c in candidates if c['component'] in ('ote', 'total')]
+    if any(c.get('marked', True) for c in pool):
+        pool = [c for c in pool if c.get('marked', True)]  # bare numbers lose to amounts with a currency
+    else:
+        pool = [c for c in pool if c.get('labeled')]  # and alone count only right after "Salary:" / "Pay
+    resolved = [r for r in (_resolve(c, location) for c in pool) if r]
+    if len(resolved) > 1:
+        # Per-region ranges ("New Jersey Base Pay Range: ..."): the one for the job's own region.
+        place = (location or '').lower()
+        local = [c for c in resolved if c.get('location') and any(
+            len(word) > 2 and re.search(rf'\b{re.escape(word)}\b', place)
+            for word in re.findall(r'[a-z]+', c['location'].lower()) if word not in _REGION_STOP)]
+        if local and len({(c['min'], c['max']) for c in local}) == 1:
+            resolved = local[:1]
+    if not resolved:
+        return None, pool
+    if len(resolved) == 1:
+        chosen = resolved[0]
+    else:
+        currencies = {c.get('currency') for c in resolved}
+        if len(currencies) > 1:
+            # One range per country ("US: $118k-216k; Canada: CA$171k-201k"): the job's own country;
+            # otherwise the amount right after a pay label ("Salary: Up to £100,000").
+            local = dollar_currency(location) if any('$' in (c.get('text') or '') for c in resolved) else None
+            resolved = ([c for c in resolved if c.get('currency') == local] or
+                        [c for c in resolved if c.get('labeled')] or resolved)
+            currencies = {c.get('currency') for c in resolved}
+        periods = {c['period'] for c in resolved}
+        if len(currencies) > 1 or len(periods) > 1:
+            # Pay is usually one period; keep the one with a range (hourly add-ons are single amounts).
+            ranged = [c for c in resolved if c['min'] is not None and c['max'] is not None and c['min'] < c['max']]
+            if len({(c.get('currency'), c['period']) for c in ranged}) == 1:
+                resolved = ranged
+            elif not ranged and len(currencies) == 1:
+                resolved = resolved[:1]  # "$23.55 per hour, equivalent to an annual salary of $49k": the first
+            else:
+                return None, pool
+        ranges = [c for c in resolved if c['min'] is not None and c['max'] is not None and c['min'] < c['max']]
+        group = ranges or resolved
+        low = min(c['min'] for c in group if c['min'] is not None) if any(c['min'] is not None for c in group) else None
+        high = max(c['max'] for c in group if c['max'] is not None) if any(c['max'] is not None for c in group) else None
+        floor = low if low is not None else high
+        # Several ranges or amounts of one scale are pay zones or levels: one overall range.
+        # Many single amounts are a table (miles, levels, statistics), not this job's pay.
+        if floor is None or (high or floor) > 4 * floor or (not ranges and (len(group) > 3 or (high or floor) > 2 * floor)):
+            return None, pool
+        if len(group) == 1:
+            chosen = group[0]
+        else:
+            currency, period = next(iter(currencies)), next(iter(periods))
+            chosen = {'min': low, 'max': high, 'currency': currency, 'period': period, 'status': 'combined',
+                      'text': format_salary(low, high, currency, period)}
+    if fallback:
+        chosen = dict(chosen, text=f"{chosen['text']} ({'OTE' if chosen.get('component') == 'ote' else 'total compensation'})",
+                      status='fallback_' + str(chosen.get('component') or 'total'))
+    return chosen, pool
+
+
 def project(raw, result, text, original, source, key):
     """Project evidence-rich results to the existing flat job schema."""
     result = deepcopy(result)
@@ -674,32 +925,27 @@ def project(raw, result, text, original, source, key):
             seen.add(signature)
             candidates.append(candidate)
     result['salary_candidates'] = candidates
-    base = [c for c in candidates if c['component'] == 'base']
-    primary = base or [c for c in candidates if c['component'] == 'unspecified']
-    selected = primary[0] if len(primary) == 1 else None
-    if len(primary) > 1:
-        # Real pay is a range; stray single amounts nearby (funding, stipends, "1.5x") are not.
-        ranges = [c for c in primary if c['min'] is not None and c['max'] is not None and c['min'] < c['max']]
-        ranges = [c for c in ranges if c['currency']] or ranges
-        currencies = {c['currency'] for c in ranges}
-        periods = {c['period'] for c in ranges if c['period']}
-        # Several ranges of one scale and currency are pay zones: one overall range.
-        if ranges and len(currencies) == 1 and len(periods) <= 1 and \
-                max(c['max'] for c in ranges) <= 4 * min(c['min'] for c in ranges):
-            if len(ranges) == 1:
-                selected = ranges[0]
-            else:
-                low, high = min(c['min'] for c in ranges), max(c['max'] for c in ranges)
-                currency, period = next(iter(currencies)), next(iter(periods), None)
-                selected = {'min': low, 'max': high, 'currency': currency, 'period': period, 'status': 'combined',
-                            'text': format_salary(low, high, currency, period)}
+    selected, primary = select_salary(candidates, str(raw.get('location') or ''))
     result['salary_status'] = (selected['status'] if selected else 'ambiguous' if len(primary) > 1 else 'not_stated')
+    if not selected and result['salary_status'] == 'ambiguous':
+        # Several amounts and none clearly the pay: no salary, rather than the scraper's guess.
+        raw = dict(raw, salary='', salary_min=None, salary_max=None, salary_currency='', salary_period=None)
     result['source_fields'] = deepcopy(source)
     result['input_hash'] = key
     result['description_sha256'] = sha256(text.encode()).hexdigest()
     names = list(dict.fromkeys(s['name'] for s in result['skills']))
-    experiences = [e for e in result['experience'] if e.get('requirement') == 'required'] or result['experience']
-    exp = max(experiences, key=lambda item: item.get('min') or 0) if experiences else None
+    found = result['experience']
+    required = [e for e in found if e.get('requirement') == 'required']
+    alternatives = [e for e in found if e.get('requirement') == 'alternative']
+    if required:
+        exp = max(required, key=lambda item: item.get('min') or 0)
+    elif alternatives:
+        exp = min(alternatives, key=lambda item: item.get('min') or 0)
+    else:
+        exp = max(found, key=lambda item: item.get('min') or 0) if found else None
+    board_years = (source.get('structured_fields') or {}).get('experience_min')
+    if exp is None and isinstance(board_years, (int, float)) and not isinstance(board_years, bool):
+        exp = {'min': float(board_years), 'max': None, 'evidence': {'text': f'{board_years:g}+ years (board field)'}}
     out = dict(raw)
     sections = section_fields(text)
     out.update(description=text, description_raw=original, extraction=result,

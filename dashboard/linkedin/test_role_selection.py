@@ -20,6 +20,20 @@ def catalog():
 
 
 class RoleSelectionTests(unittest.TestCase):
+    def test_three_workflows_cover_all_68_roles_without_overlap(self):
+        roles = catalog()
+        self.assertEqual(len(roles), 68)
+        combined = []
+        for start, end in ((1, 23), (24, 45), (46, 68)):
+            selected = roles[start-1:end]
+            shards = [select_roles(roles, filters=selected, start_idx=start, end_idx=end,
+                                   shard=f'{part}/8') for part in range(1, 9)]
+            flattened = [role for shard in shards for role in shard]
+            self.assertEqual(flattened, selected)
+            combined.extend(flattened)
+        self.assertEqual(combined, roles)
+        self.assertEqual(len(set(combined)), 68)
+
     def test_default_selection_is_balanced_and_scraped_once(self):
         roles = catalog()
         for total in (4, 8, 12, 16):
