@@ -19,9 +19,9 @@ on:
         type: choice
         options: [day, week, 3week, month, any]
       roles:
-        description: "Roles to scrape (comma-separated, substring match). 'all' = roles 1-23 from the list."
+        description: "Roles to scrape (comma-separated, substring match). Edit to add/remove any role."
         required: false
-        default: "all"
+        default: "Senior Commodity Manager, Commodity Manager, Commodity Buyer, Commodity Lead, Purchasing Commodity Manager, Senior Commodity Buyer, Global Supply Chain Analyst, Global Supply Chain Specialist, Global Supply Chain Lead, Global Sourcing Specialist, Global Commodity Manager, Global Supply Chain Manager, Commodity Specialist, Procurement Manager, Procurement Specialist, Senior Procurement Specialist, Senior Procurement Manager, Assistant Procurement Manager, Procurement Associate, Senior Procurement Analyst, Senior Procurement Officer, Senior Procurement Engineer, Senior Procurement Consultant"
         type: string
       shards:
         description: "Number of parallel runners"
@@ -107,9 +107,6 @@ jobs:
           SHARD="${{ matrix.shard }}/$N"
           cd "${{ steps.root.outputs.dir }}"
           ROLE_FILTER="${{ inputs.roles }}"
-          if [ "$ROLE_FILTER" = "all" ]; then
-            ROLE_FILTER=""
-          fi
           if [ -n "$ROLE_FILTER" ]; then
             IFS=',' read -ra ROLE_LIST <<< "$ROLE_FILTER"
             for ROLE in "${ROLE_LIST[@]}"; do
