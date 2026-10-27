@@ -24,18 +24,37 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Fetch scraper code
+        run: |
+          if [ -n "${{ secrets.SCRAPER_REPO }}" ] && \
+             ! find . -name "discover_commoncrawl.py" -not -path "./.git/*" | grep -q .; then
+            git clone "https://${{ secrets.SCRAPER_PAT }}@github.com/${{ secrets.SCRAPER_REPO }}.git" _scrapers
+          fi
+
+      - name: Find scraper root
+        id: root
+        run: |
+          if   find scrapers   -name "discover_commoncrawl.py" 2>/dev/null | grep -q .; then
+            echo "dir=scrapers" >> "$GITHUB_OUTPUT"
+          elif find _scrapers  -name "discover_commoncrawl.py" 2>/dev/null | grep -q .; then
+            echo "dir=$(dirname $(find _scrapers -name discover_commoncrawl.py | head -1))" >> "$GITHUB_OUTPUT"
+          elif find .          -name "discover_commoncrawl.py" -not -path "./.git/*" 2>/dev/null | grep -q .; then
+            echo "dir=$(dirname $(find . -name discover_commoncrawl.py -not -path './.git/*' | head -1))" >> "$GITHUB_OUTPUT"
+          else
+            echo "ERROR: discover_commoncrawl.py not found" && exit 1
+          fi
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        working-directory: ./scrapers
         run: pip install --quiet httpx pandas python-dotenv
 
       - name: Run Common Crawl discovery
-        working-directory: ./scrapers
+        working-directory: ${{ steps.root.outputs.dir }}
         run: |
-          IFS=',' read -ra PLATFORMS <<< "${{ inputs.platforms || 'workday,oracle' }}"
+          IFS=',' read -ra PLATFORMS <<< "${{ inputs.platforms || 'workday,oracle,greenhouse,lever,ashby,smartrecruiter,jobvite,icims,bamboohr,teamtailor,workable' }}"
           for platform in "${PLATFORMS[@]}"; do
             platform=$(echo "$platform" | xargs)
             echo "========================================"
@@ -53,5 +72,11 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "feat: discover new ATS companies via Common Crawl"
-          file_pattern: "scrapers/workday/workday.csv scrapers/oracle/oracle.csv scrapers/greenhouse/greenhouse_companies.txt scrapers/lever/lever_companies.txt scrapers/ashby/ashby_companies.txt scrapers/smartrecruiter/smartrecruiter_companies.txt scrapers/jobvite/jobvite_companies.txt scrapers/icims/icims.csv scrapers/bamboohr/bamboohr.csv scrapers/teamtailor/teamtailor.csv scrapers/workable/workable.csv"
+          file_pattern: |
+            **/*workday.csv **/oracle.csv
+            **/*greenhouse_companies.txt **/*lever_companies.txt
+            **/*ashby_companies.txt **/*smartrecruiter_companies.txt
+            **/*jobvite_companies.txt **/icims.csv
+            **/bamboohr.csv **/teamtailor.csv
+            **/workable.csv
           commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
