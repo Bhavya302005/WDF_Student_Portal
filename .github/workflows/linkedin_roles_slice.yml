@@ -130,6 +130,8 @@ jobs:
         run: pip install --quiet httpx python-dotenv pandas openpyxl curl_cffi beautifulsoup4
 
       - name: Scrape shard ${{ matrix.shard }}/${{ inputs.shards || '8' }}
+        env:
+          LINKEDIN_LI_AT: ${{ secrets.LINKEDIN_LI_AT }}
         run: |
           N=${{ inputs.shards || '8' }}
           SHARD="${{ matrix.shard }}/$N"
