@@ -155,8 +155,6 @@ jobs:
                 --post-time "${{ inputs.post_time || 'week' }}" \
                 --shard     "$SHARD" \
                 --max-results all \
-                --start-idx "${{ env.ROLE_START }}" \
-                --end-idx   "${{ env.ROLE_END }}" \
                 --role      "$ROLE"
             done
           else
