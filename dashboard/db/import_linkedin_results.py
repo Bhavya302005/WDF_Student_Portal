@@ -121,10 +121,14 @@ def main():
     parser.add_argument('--input', type=Path, default=Path('linkedin-import-input'))
     parser.add_argument('--output', type=Path, default=Path('linkedin-import-report.json'))
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--source', action='append', help='Source subfolder (repeatable)')
     args = parser.parse_args()
-    a, info_a = read_workbook(args.input / 'roles-1-23')
-    b, info_b = read_workbook(args.input / 'roles-24-45')
-    unique = combine(a + b)
+    rows, sources = [], []
+    for source in args.source or ['roles-1-23', 'roles-24-45']:
+        batch, info = read_workbook(args.input / source)
+        rows.extend(batch)
+        sources.append(info)
+    unique = combine(rows)
     dbs = [(key, os.environ[key]) for key in ('NEON_DATABASE_URL', 'JOBS_DATABASE_URL_2',
                                              'JOBS_DATABASE_URL_3', 'JOBS_DATABASE_URL_4') if os.getenv(key)]
     if not dbs or dbs[0][0] != 'NEON_DATABASE_URL':
@@ -132,8 +136,8 @@ def main():
     reassigned = assign_ids(unique, dbs)
     ids = [row['id'] for row in unique.values()]
     existing, before = probe(dbs, ids)
-    report = {'sources': [info_a, info_b], 'unique_jobs': len(unique),
-              'duplicates_merged': len(a) + len(b) - len(unique),
+    report = {'sources': sources, 'unique_jobs': len(unique),
+              'duplicates_merged': len(rows) - len(unique),
               'already_in_database': len(existing), 'new_jobs': len(unique) - len(existing),
               'ids_resolved_by_posting_url': reassigned,
               'before': before, 'apply': args.apply, 'expire_missing': False,
