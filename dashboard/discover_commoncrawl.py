@@ -433,12 +433,24 @@ PLATFORMS = {
 
 
 # ----- the index ----------------------------------------------------------------------------------------
+class IndexFetchError(RuntimeError):
+    """A failed index request must not look like a successful empty result."""
+
+
+class IndexText(str):
+    complete = True
+
+
 async def _get_text(client: httpx.AsyncClient, url: str, params: dict) -> str:
     """One index page. The index sometimes cuts a response short: keep the complete lines read before the cut."""
     for attempt in range(4):
         chunks = []
         try:
             async with client.stream("GET", url, params=params, timeout=120) as response:
+                if response.status_code == 404:
+                    body = (await response.aread()).decode('utf-8', errors='replace')
+                    if 'No Captures found' in body:
+                        return json.dumps({'pages': 0}) if params.get('showNumPages') else ''
                 if response.status_code == 503 or response.status_code == 429:
                     raise httpx.HTTPStatusError("busy", request=response.request, response=response)
                 response.raise_for_status()
@@ -446,35 +458,68 @@ async def _get_text(client: httpx.AsyncClient, url: str, params: dict) -> str:
                     chunks.append(chunk)
             return "".join(chunks)
         except (httpx.HTTPError, httpx.StreamError) as exc:
+            log.warning('  index request failed (%s), attempt %d/4', type(exc).__name__, attempt + 1)
             text = "".join(chunks)
             if text.count("\n") > 10:
                 log.info("  index page cut short (%s); keeping %d lines", type(exc).__name__, text.count("\n"))
-                return text.rsplit("\n", 1)[0]
+                partial = IndexText(text.rsplit("\n", 1)[0])
+                partial.complete = False
+                return partial
             await asyncio.sleep(5 * (attempt + 1))
-    return ""
+    raise IndexFetchError(f'Index request failed after 4 attempts: {url}, page={params.get("page", "count")}')
 
 
 async def harvest(client: httpx.AsyncClient, platform: Platform, snapshots: int = SNAPSHOTS,
-                  max_pages: int = MAX_PAGES) -> set[str]:
+                  max_pages: int = MAX_PAGES, diagnostics: dict | None = None) -> set[str]:
     collections = (await client.get(COLLINFO, timeout=60)).json()[:snapshots]
+    if not collections:
+        raise IndexFetchError('No Common Crawl snapshots were returned')
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics.update(snapshots=len(collections), failed_snapshots=0, failed_pages=0,
+                       truncated_pages=0, capped_snapshots=0, pages_read=0)
     slugs: set[str] = set()
     for collection in collections:
         api = collection["cdx-api"]
+        # Match page-count and fetch granularity. Without pageSize=1 a single
+        # page spans multiple compressed index blocks and often times out.
+        query = {'url': platform.pattern, 'output': 'json', 'pageSize': 1}
         try:
-            count = json.loads(await _get_text(client, api, {"url": platform.pattern, "output": "json", "showNumPages": "true"}))["pages"]
-        except (ValueError, KeyError):
-            log.warning("  %s: page count unavailable, snapshot skipped", collection["id"])
-            continue
+            count = int(json.loads(await _get_text(client, api, {**query, 'showNumPages': 'true'}))["pages"])
+        except (ValueError, KeyError, TypeError, IndexFetchError):
+            diagnostics['failed_snapshots'] += 1
+            log.warning("  %s: page count unavailable; attempting first small page (partial coverage)", collection["id"])
+            count = 1
+        if count > max_pages:
+            diagnostics['capped_snapshots'] += 1
         for page in range(min(count, max_pages)):
-            for line in (await _get_text(client, api, {"url": platform.pattern, "output": "json", "page": page})).splitlines():
+            try:
+                body = await _get_text(client, api, {**query, 'page': page})
+            except IndexFetchError as exc:
+                diagnostics['failed_pages'] += 1
+                log.warning('  %s page %d: %s', collection['id'], page, exc)
+                continue
+            diagnostics['pages_read'] += 1
+            if not getattr(body, 'complete', True):
+                diagnostics['truncated_pages'] += 1
+            records = 0
+            for line in body.splitlines():
                 try:
-                    slug = platform.slug_of(json.loads(line)["url"])
-                except (ValueError, KeyError):
+                    url = json.loads(line)["url"]
+                    records += 1
+                    slug = platform.slug_of(url)
+                except (ValueError, KeyError, TypeError):
                     continue
                 if slug:
                     slugs.add(slug)
+            if not records:
+                diagnostics['failed_pages'] += 1
+                log.warning('  %s page %d: no index records returned despite nonzero page count', collection['id'], page)
             await asyncio.sleep(1)  # one page at a time, with a pause: the index is a shared public service
-        log.info("  %s: %d index pages, %d candidates so far", collection["id"], min(count, max_pages), len(slugs))
+        log.info("  %s: %d index pages attempted, %d candidates so far", collection["id"], min(count, max_pages), len(slugs))
+    diagnostics['complete'] = not any(diagnostics[key] for key in
+                                       ('failed_snapshots', 'failed_pages', 'truncated_pages', 'capped_snapshots'))
+    if diagnostics['pages_read'] == 0 and not diagnostics['complete']:
+        raise IndexFetchError('Common Crawl returned no readable index pages; discovery is incomplete')
     return slugs
 
 
@@ -579,8 +624,9 @@ def _save_companies(platform: Platform, rows: list[dict], found: list[Found]) ->
 
 async def discover(platform: Platform, apply: bool, snapshots: int, max_pages: int) -> dict:
     rows, known = _known(platform)
+    index_coverage = {}
     async with httpx.AsyncClient(headers=UA, follow_redirects=True, timeout=40) as client:
-        candidates = await harvest(client, platform, snapshots, max_pages)
+        candidates = await harvest(client, platform, snapshots, max_pages, diagnostics=index_coverage)
         new = sorted(slug for slug in candidates if _candidate_key(platform, slug) not in known)
         log.info("%s: %d candidates, %d not in %s", platform.key, len(candidates), len(new), platform.csv_path.name)
         semaphore = asyncio.Semaphore(PROBES)
@@ -597,14 +643,14 @@ async def discover(platform: Platform, apply: bool, snapshots: int, max_pages: i
 
     report = {"platform": platform.key, "candidates": len(candidates), "new_candidates": len(new),
               "live": len(found), "added": len(unique), "jobs_listed": sum(f.total for f in unique),
-              "top": [(f.name, f.total) for f in unique[:15]]}
+              "top": [(f.name, f.total) for f in unique[:15]], 'index_coverage': index_coverage}
     if apply and unique:
         report['added'] = _save_companies(platform, rows, unique)
         log.info("%s: added %d companies to %s", platform.key, report['added'], platform.csv_path)
     return report
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("platform", choices=sorted(PLATFORMS))
     parser.add_argument("--apply", action="store_true", help="add the live new companies to the platform's CSV")
@@ -615,6 +661,10 @@ def main() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     report = asyncio.run(discover(PLATFORMS[args.platform], args.apply, args.snapshots, args.max_pages))
     print(json.dumps(report, indent=1, ensure_ascii=False))
+    if not report['index_coverage']['complete']:
+        log.warning('Discovery is partial; successful additions were saved, but index coverage was incomplete')
+        return 3
+    return 0
 
 
 if __name__ == "__main__":
