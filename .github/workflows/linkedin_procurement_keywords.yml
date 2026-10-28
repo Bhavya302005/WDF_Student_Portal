@@ -1,0 +1,23 @@
+name: LinkedIn Procurement Keywords
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      post_time:
+        description: "How far back to collect every available job"
+        required: false
+        default: "week"
+        type: choice
+        options: [day, week, 3week, month, any]
+
+jobs:
+  scrape:
+    uses: ./.github/workflows/linkedin_roles_slice.yml
+    with:
+      post_time: ${{ inputs.post_time || 'week' }}
+      search_terms: "procurement,commodity,category,buyer,purchasing,Sourcing"
+      shards: "6"
+    secrets: inherit
