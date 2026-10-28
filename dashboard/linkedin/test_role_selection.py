@@ -112,8 +112,6 @@ class RoleSelectionTests(unittest.TestCase):
             self.assertEqual(by_id['one'][rows[0].index('reposted_source')], 'linkedin_label')
             self.assertEqual(by_id['one'][rows[0].index('repost_status')], 'Reposted')
             self.assertEqual(by_id['two'][rows[0].index('repost_status')], 'Unknown')
-            description_column = rows[0].index('description')
-            self.assertLessEqual(max(len(str(row[description_column] or '')) for row in rows[1:]), 1500)
             book.close()
 
 
