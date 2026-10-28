@@ -3,11 +3,31 @@ from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from discover_commoncrawl import Found, PLATFORMS, _known, _save_companies
 
 
 class DiscoverySaveTests(unittest.TestCase):
+    def test_parallel_merge_preserves_branch_updates_and_is_idempotent(self):
+        import merge_discovered_companies as merger
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / 'dashboard'
+            platform = replace(PLATFORMS['oracle'], csv_path=source / 'oracle/oracle.csv')
+            artifact_platform = replace(platform, csv_path=root / 'artifacts/oracle/oracle.csv')
+            existing = Found('existing.oraclecloud.com/CX_1', 'Existing', 1)
+            fresh = Found('fresh.oraclecloud.com/CX_1', 'Fresh', 1)
+            concurrent = Found('concurrent.oraclecloud.com/CX_1', 'Concurrent', 1)
+            _save_companies(artifact_platform, [], [existing, fresh])
+            _save_companies(platform, [], [existing, concurrent])
+            with patch.object(merger, 'HERE', source), patch.object(merger, 'PLATFORMS', {'oracle': platform}):
+                merger.merge(root / 'artifacts')
+                merger.merge(root / 'artifacts')
+            rows, known = _known(platform)
+            self.assertEqual(len(rows), 3)
+            self.assertEqual(len(known), 3)
+
     def test_missing_oracle_directory_and_idempotent_merge(self):
         with tempfile.TemporaryDirectory() as folder:
             platform = replace(PLATFORMS['oracle'], csv_path=Path(folder) / 'oracle' / 'oracle.csv')
