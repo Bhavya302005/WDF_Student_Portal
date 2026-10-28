@@ -32,23 +32,34 @@ jobs:
         run: pip install --quiet httpx pandas python-dotenv
 
       - name: Run Common Crawl discovery
+        id: discovery
         working-directory: dashboard
+        env:
+          DISCOVERY_PLATFORMS: ${{ inputs.platforms || 'workday,oracle,greenhouse,lever,ashby,smartrecruiter,jobvite,icims,bamboohr,teamtailor,workable' }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          IFS=',' read -ra PLATFORMS <<< "${{ inputs.platforms || 'workday,oracle,greenhouse,lever,ashby,smartrecruiter,jobvite,icims,bamboohr,teamtailor,workable' }}"
+          IFS=',' read -ra PLATFORMS <<< "$DISCOVERY_PLATFORMS"
+          failed=0
           for platform in "${PLATFORMS[@]}"; do
             platform=$(echo "$platform" | xargs)
             echo "========================================"
             echo "Discovering: $platform"
             echo "========================================"
-            if [ "${{ inputs.dry_run }}" = "true" ]; then
-              python3 discover_commoncrawl.py "$platform"
+            args=("$platform")
+            if [ "$DRY_RUN" != "true" ]; then
+              args+=(--apply)
+            fi
+            if python3 discover_commoncrawl.py "${args[@]}"; then
+              echo "Discovery succeeded: $platform"
             else
-              python3 discover_commoncrawl.py "$platform" --apply
+              echo "::error::Discovery failed for $platform; continuing other platforms"
+              failed=1
             fi
           done
+          exit "$failed"
 
       - name: Commit updated company lists
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ always() && !cancelled() && inputs.dry_run != true }}
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "feat: discover new ATS companies via Common Crawl"
