@@ -6,6 +6,12 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
+      state_split_mode:
+        description: "auto: split capped nationwide searches by US state; all: always search every US state"
+        required: false
+        default: auto
+        type: choice
+        options: [auto, all]
       post_time:
         description: "How far back to look for jobs"
         required: false
@@ -30,6 +36,7 @@ jobs:
     with:
       role_start: 46
       role_end: 68
+      state_split_mode: ${{ inputs.state_split_mode || 'auto' }}
       post_time: ${{ inputs.post_time || 'week' }}
       roles: ${{ inputs.roles }}
       shards: ${{ inputs.shards || '8' }}

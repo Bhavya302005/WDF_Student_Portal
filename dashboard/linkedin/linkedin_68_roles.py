@@ -76,7 +76,7 @@ from datetime import datetime, date, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
-from role_selection import select_roles
+from role_selection import select_roles, should_split_states
 
 # -- Dependency checks --------------------------------------------------------
 try:
@@ -1161,6 +1161,10 @@ def main() -> None:
         help="Comma-separated queries allowed to continue state by state after LinkedIn's 1,000-result cap",
     )
     parser.add_argument(
+        '--state-split-mode', choices=['auto', 'all'], default='auto',
+        help='auto: expand capped US-wide queries; all: always search every US state for every selected query',
+    )
+    parser.add_argument(
         "--use-supabase",
         action="store_true",
         help="Enable Supabase upsert if credentials are set (disabled by default)",
@@ -1197,6 +1201,7 @@ def main() -> None:
     log.info(f"  Roles        : {len(ROLES)}")
     log.info(f"  Post-time    : {args.post_time}" + (f" ({hours_old}h)" if hours_old else " (any time)"))
     log.info(f"  Location     : {args.location}")
+    log.info(f"  State split  : {args.state_split_mode}")
     log.info(f"  Descriptions : {'yes' if fetch_description else 'no (--no-descriptions)'}")
     log.info(f"  Output CSV   : {CSV_FILE}")
     log.info(f"  Strict CSV   : {CSV_STRICT_FILE}")
@@ -1304,10 +1309,11 @@ def main() -> None:
                 us_wide = args.location.strip().lower() in ("united states", "usa", "us", "united states of america")
                 if stats["capped"] and not us_wide:
                     capped_parts.append("not split: the search is not US-wide")
-                state_split_enabled = state_split_terms is None or role.casefold() in state_split_terms
+                state_split_enabled = args.state_split_mode == 'all' or state_split_terms is None or role.casefold() in state_split_terms
                 if stats["capped"] and us_wide and not state_split_enabled:
                     capped_parts.append("state split disabled for this query")
-                split_by_state = us_wide and state_split_enabled and (stats["capped"] or state_split_terms is not None)
+                split_by_state = should_split_states(role, args.location, stats['capped'],
+                                                    mode=args.state_split_mode, terms=state_split_terms)
                 if split_by_state:
                     # LinkedIn shows at most ~1,000 jobs per search: search each US state separately (its work-type
                     # and job-type filters are ignored). Jobs already found are skipped through global_seen_ids.

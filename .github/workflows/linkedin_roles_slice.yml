@@ -29,6 +29,9 @@ on:
       state_split_terms:
         type: string
         default: ""
+      state_split_mode:
+        type: string
+        default: auto
       shards:
         type: string
         default: "8"
@@ -41,6 +44,12 @@ on:
         required: false
   workflow_dispatch:
     inputs:
+      state_split_mode:
+        description: "auto: split capped nationwide searches by US state; all: always search every US state"
+        required: false
+        default: auto
+        type: choice
+        options: [auto, all]
       post_time:
         description: "How far back to look for jobs"
         required: false
@@ -108,12 +117,13 @@ jobs:
           ROLE_FILTER: ${{ inputs.roles }}
           SEARCH_TERMS: ${{ inputs.search_terms }}
           STATE_SPLIT_TERMS: ${{ inputs.state_split_terms }}
+          STATE_SPLIT_MODE: ${{ inputs.state_split_mode || 'auto' }}
           POST_TIME: ${{ inputs.post_time || 'week' }}
           SHARD_COUNT: ${{ inputs.shards || '8' }}
           SHARD_NUMBER: ${{ matrix.shard }}
         run: |
           cd "${{ steps.root.outputs.dir }}"
-          args=(--post-time "$POST_TIME" --shard "$SHARD_NUMBER/$SHARD_COUNT" --max-results all --time-budget 330
+          args=(--post-time "$POST_TIME" --shard "$SHARD_NUMBER/$SHARD_COUNT" --max-results all --time-budget 330 --state-split-mode "$STATE_SPLIT_MODE"
                 --start-idx "$ROLE_START" --end-idx "$ROLE_END")
           if [ -n "$ROLE_FILTER" ]; then
             args+=(--roles "$ROLE_FILTER")
