@@ -26,6 +26,9 @@ on:
       search_terms:
         type: string
         default: ""
+      state_split_terms:
+        type: string
+        default: ""
       shards:
         type: string
         default: "8"
@@ -104,6 +107,7 @@ jobs:
           LINKEDIN_LI_AT: ${{ secrets.LINKEDIN_LI_AT }}
           ROLE_FILTER: ${{ inputs.roles }}
           SEARCH_TERMS: ${{ inputs.search_terms }}
+          STATE_SPLIT_TERMS: ${{ inputs.state_split_terms }}
           POST_TIME: ${{ inputs.post_time || 'week' }}
           SHARD_COUNT: ${{ inputs.shards || '8' }}
           SHARD_NUMBER: ${{ matrix.shard }}
@@ -116,6 +120,9 @@ jobs:
           fi
           if [ -n "$SEARCH_TERMS" ]; then
             args+=(--search-terms "$SEARCH_TERMS")
+          fi
+          if [ -n "$STATE_SPLIT_TERMS" ]; then
+            args+=(--state-split-terms "$STATE_SPLIT_TERMS")
           fi
           python3 linkedin/linkedin_68_roles.py "${args[@]}"
 

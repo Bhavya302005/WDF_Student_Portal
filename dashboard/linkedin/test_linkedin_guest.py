@@ -87,6 +87,12 @@ class PagingTests(unittest.TestCase):
         _, stats = self.run_role(batches)
         self.assertTrue(stats["capped"])
 
+    def test_empty_probe_at_linkedin_limit_is_reported_as_capped(self):
+        batches = [(self.rows(range(i, i + 50)), False) for i in range(0, 1000, 50)]
+        jobs, stats = self.run_role(batches)
+        self.assertEqual(1000, len(jobs))
+        self.assertTrue(stats["capped"])
+
 
 
 class ShardResilienceTests(unittest.TestCase):

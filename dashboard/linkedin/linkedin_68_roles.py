@@ -928,6 +928,11 @@ def scrape_role(
                     time.sleep(wait)
 
         if batch_df is None or (hasattr(batch_df, "empty") and batch_df.empty):
+            # The guest endpoint's final probe starts at 1,000 and returns an
+            # empty, end-marked frame. Preserve that as a cap signal so main()
+            # continues with state searches instead of calling it complete.
+            if batch_df is not None and offset >= GUEST_LIMIT and stats["found"] >= GUEST_LIMIT:
+                stats["capped"] = True
             log.info(f"    No more results for '{role}'.")
             break
 
@@ -1151,6 +1156,11 @@ def main() -> None:
         help="Maximum results wanted per role, or 'all' for all available (default: 1000)",
     )
     parser.add_argument(
+        "--state-split-terms",
+        default=None,
+        help="Comma-separated queries allowed to continue state by state after LinkedIn's 1,000-result cap",
+    )
+    parser.add_argument(
         "--use-supabase",
         action="store_true",
         help="Enable Supabase upsert if credentials are set (disabled by default)",
@@ -1179,6 +1189,8 @@ def main() -> None:
     role_cd_min      = 3 if args.fast else ROLE_COOLDOWN_MIN
     role_cd_max      = 6 if args.fast else ROLE_COOLDOWN_MAX
     base_delay       = 2.0 if args.fast else BASE_DELAY_SEC
+    state_split_terms = ({term.strip().casefold() for term in args.state_split_terms.split(',') if term.strip()}
+                         if args.state_split_terms is not None else None)
 
     log.info("=" * 65)
     log.info("LINKEDIN 68-ROLES SCRAPER")
@@ -1287,7 +1299,10 @@ def main() -> None:
                 us_wide = args.location.strip().lower() in ("united states", "usa", "us", "united states of america")
                 if stats["capped"] and not us_wide:
                     capped_parts.append("not split: the search is not US-wide")
-                if stats["capped"] and us_wide:
+                state_split_enabled = state_split_terms is None or role.casefold() in state_split_terms
+                if stats["capped"] and us_wide and not state_split_enabled:
+                    capped_parts.append("state split disabled for this query")
+                if stats["capped"] and us_wide and state_split_enabled:
                     # LinkedIn shows at most ~1,000 jobs per search: search each US state separately (its work-type
                     # and job-type filters are ignored). Jobs already found are skipped through global_seen_ids.
                     log.info(f"  '{role}' reached LinkedIn's limit: searching state by state")
