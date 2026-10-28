@@ -275,6 +275,13 @@ jobs:
                   df[col] = (df[col].fillna('').astype(str)
                                .str.replace(r'\r\n|\r|\n', ' ', regex=True)
                                .apply(lambda x: ILLEGAL.sub('', x)))
+                  # Full JDs remain in the merged CSV. Keep the workbook small
+                  # and responsive enough for Excel/Google Sheets to open.
+                  if col.casefold() in {
+                      'description', 'job_description', 'basic_qualifications',
+                      'preferred_qualifications', 'key_responsibilities'
+                  }:
+                      df[col] = df[col].str.slice(0, 1500)
               return df
 
           def indexed(df):
