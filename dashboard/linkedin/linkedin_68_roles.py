@@ -1260,6 +1260,7 @@ def main() -> None:
         else:
             blocked_roles = []
         for idx, role in enumerate(pass_roles, start=1):
+            checkpointed = False
             if role in completed:
                 log.info(f"[{idx:>2}/{len(pass_roles)}] '{role}' — already completed, skipping")
                 continue
@@ -1296,16 +1297,21 @@ def main() -> None:
                     desc_workers=DESC_WORKERS,
                 )
                 capped_parts = []
+                # Save the nationwide search before a long state expansion.
+                if jobs:
+                    append_jobs_to_disk(jobs)
+                checkpointed = True
                 us_wide = args.location.strip().lower() in ("united states", "usa", "us", "united states of america")
                 if stats["capped"] and not us_wide:
                     capped_parts.append("not split: the search is not US-wide")
                 state_split_enabled = state_split_terms is None or role.casefold() in state_split_terms
                 if stats["capped"] and us_wide and not state_split_enabled:
                     capped_parts.append("state split disabled for this query")
-                if stats["capped"] and us_wide and state_split_enabled:
+                split_by_state = us_wide and state_split_enabled and (stats["capped"] or state_split_terms is not None)
+                if split_by_state:
                     # LinkedIn shows at most ~1,000 jobs per search: search each US state separately (its work-type
                     # and job-type filters are ignored). Jobs already found are skipped through global_seen_ids.
-                    log.info(f"  '{role}' reached LinkedIn's limit: searching state by state")
+                    log.info(f"  '{role}': searching all US states (explicit selection or capped nationwide search)")
                     for state_name in US_STATES:
                         if out_of_time() or stats.get("blocked"):
                             capped_parts.append(f"stopped before {state_name}")
@@ -1315,13 +1321,15 @@ def main() -> None:
                             global_seen_ids=global_seen_ids, fetch_description=fetch_description,
                             max_results=max_results, base_delay_sec=base_delay, desc_workers=DESC_WORKERS)
                         jobs += more
+                        if more:
+                            append_jobs_to_disk(more)
                         stats["found"] += part["found"]
                         stats["hit_429"] = stats["hit_429"] or part["hit_429"]
                         stats["blocked"] = stats.get("blocked") or part.get("blocked")
                         if part["capped"]:
                             capped_parts.append(state_name)
                 coverage.append((role, stats["found"], len(jobs), "still capped: " + ", ".join(capped_parts)
-                                 if capped_parts else ("split by state" if stats["capped"] else "complete")))
+                                 if capped_parts else ("split by state" if split_by_state else "complete")))
             except KeyboardInterrupt:
                 log.warning("\nInterrupted — saving state...")
                 _flush(state, completed, grand_total, global_seen_ids, run_jobs, use_supabase)
@@ -1354,7 +1362,8 @@ def main() -> None:
                 log.info(f"  Found {len(jobs)} new jobs for '{role}'")
                 run_jobs.extend(jobs)
                 grand_total += len(jobs)
-                append_jobs_to_disk(jobs)
+                if not checkpointed:
+                    append_jobs_to_disk(jobs)
                 if use_supabase:
                     upsert_to_supabase(jobs)
             else:

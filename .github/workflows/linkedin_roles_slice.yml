@@ -63,7 +63,7 @@ jobs:
   # -- Scrape: all shards start immediately, no planning step ------------------
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 350
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -113,7 +113,7 @@ jobs:
           SHARD_NUMBER: ${{ matrix.shard }}
         run: |
           cd "${{ steps.root.outputs.dir }}"
-          args=(--post-time "$POST_TIME" --shard "$SHARD_NUMBER/$SHARD_COUNT" --max-results all
+          args=(--post-time "$POST_TIME" --shard "$SHARD_NUMBER/$SHARD_COUNT" --max-results all --time-budget 330
                 --start-idx "$ROLE_START" --end-idx "$ROLE_END")
           if [ -n "$ROLE_FILTER" ]; then
             args+=(--roles "$ROLE_FILTER")
