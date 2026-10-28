@@ -540,6 +540,43 @@ def _candidate_key(platform: Platform, slug: str) -> str:
     return platform.row(Found(slug, "", 0)).get("slug", slug).lower()
 
 
+def _save_companies(platform: Platform, rows: list[dict], found: list[Found]) -> int:
+    """Merge by canonical board slug; atomically replace the list after writing it."""
+    platform.csv_path.parent.mkdir(parents=True, exist_ok=True)
+    merged = {}
+    for row in rows:
+        key = str(row.get('slug', '')).strip().casefold()
+        if key:
+            merged.setdefault(key, row)
+    added = 0
+    for item in found:
+        row = {'slug': item.slug} if _is_txt(platform) else platform.row(item)
+        key = str(row.get('slug', '')).strip().casefold()
+        if key and key not in merged:
+            merged[key] = row
+            added += 1
+    import os
+    import tempfile
+    fd, temporary = tempfile.mkstemp(dir=platform.csv_path.parent, prefix='.discovery-', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', newline='', encoding='utf-8') as handle:
+            if _is_txt(platform):
+                for key in sorted(merged):
+                    handle.write(merged[key]['slug'] + '\n')
+            else:
+                fields = list(dict.fromkeys(key for row in merged.values() for key in row))
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(sorted(merged.values(), key=lambda row: row.get('name', '').casefold()))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, platform.csv_path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return added
+
+
 async def discover(platform: Platform, apply: bool, snapshots: int, max_pages: int) -> dict:
     rows, known = _known(platform)
     async with httpx.AsyncClient(headers=UA, follow_redirects=True, timeout=40) as client:
@@ -562,25 +599,8 @@ async def discover(platform: Platform, apply: bool, snapshots: int, max_pages: i
               "live": len(found), "added": len(unique), "jobs_listed": sum(f.total for f in unique),
               "top": [(f.name, f.total) for f in unique[:15]]}
     if apply and unique:
-        if _is_txt(platform):
-            existing = set()
-            if platform.csv_path.exists():
-                with open(platform.csv_path, encoding="utf-8") as handle:
-                    existing = {line.strip().lstrip("#") for line in handle if line.strip()}
-            new_slugs = [f.slug for f in unique if f.slug not in existing]
-            if new_slugs:
-                with open(platform.csv_path, "a", encoding="utf-8") as handle:
-                    for slug in sorted(new_slugs):
-                        handle.write(slug + "\n")
-            log.info("%s: added %d companies to %s", platform.key, len(new_slugs), platform.csv_path)
-        else:
-            fields = list(rows[0].keys()) if rows else ["name", "slug", "url"]
-            added = [platform.row(f) for f in unique]
-            with open(platform.csv_path, "w", newline="", encoding="utf-8") as handle:
-                writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
-                writer.writeheader()
-                writer.writerows(sorted(rows + added, key=lambda r: r["name"].lower()))
-            log.info("%s: added %d companies to %s", platform.key, len(added), platform.csv_path)
+        report['added'] = _save_companies(platform, rows, unique)
+        log.info("%s: added %d companies to %s", platform.key, report['added'], platform.csv_path)
     return report
 
 
