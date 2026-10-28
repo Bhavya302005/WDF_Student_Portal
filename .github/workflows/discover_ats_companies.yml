@@ -4,70 +4,121 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Platforms to discover (comma-separated: workday,oracle,greenhouse,lever,ashby,smartrecruiter,jobvite,icims,bamboohr,teamtailor,workable)"
-        required: false
+        description: "ATS platforms to discover (comma-separated)"
         default: "workday,oracle,greenhouse,lever,ashby,smartrecruiter,jobvite,icims,bamboohr,teamtailor,workable"
         type: string
       dry_run:
-        description: "Dry run (report only, don't add to company lists)"
-        required: false
+        description: "Report only; do not update company lists"
         default: false
         type: boolean
 
-jobs:
-  discover:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    permissions:
-      contents: write
+concurrency:
+  group: ats-company-discovery-${{ github.ref }}
+  cancel-in-progress: false
 
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      platforms: ${{ steps.plan.outputs.platforms }}
     steps:
       - uses: actions/checkout@v5
-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+      - run: pip install --quiet httpx
+      - name: Validate platform selection
+        id: plan
+        env:
+          SELECTED_PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          sys.path.insert(0, 'dashboard')
+          from discover_commoncrawl import PLATFORMS
+          selected = list(dict.fromkeys(p.strip().lower() for p in os.environ['SELECTED_PLATFORMS'].split(',') if p.strip())) or list(PLATFORMS)
+          unknown = set(selected) - set(PLATFORMS)
+          if unknown:
+              raise SystemExit('Unknown platforms: ' + ', '.join(sorted(unknown)))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('platforms=' + json.dumps(selected) + '\n')
+          PY
 
-      - name: Install dependencies
-        run: pip install --quiet httpx pandas python-dotenv
-
-      - name: Run Common Crawl discovery
-        id: discovery
+  discover:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        platform: ${{ fromJSON(needs.prepare.outputs.platforms) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install --quiet httpx
+      - name: Discover ${{ matrix.platform }}
         working-directory: dashboard
         env:
-          DISCOVERY_PLATFORMS: ${{ inputs.platforms || 'workday,oracle,greenhouse,lever,ashby,smartrecruiter,jobvite,icims,bamboohr,teamtailor,workable' }}
+          PLATFORM: ${{ matrix.platform }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          IFS=',' read -ra PLATFORMS <<< "$DISCOVERY_PLATFORMS"
-          failed=0
-          for platform in "${PLATFORMS[@]}"; do
-            platform=$(echo "$platform" | xargs)
-            echo "========================================"
-            echo "Discovering: $platform"
-            echo "========================================"
-            args=("$platform")
-            if [ "$DRY_RUN" != "true" ]; then
-              args+=(--apply)
-            fi
-            if python3 discover_commoncrawl.py "${args[@]}"; then
-              echo "Discovery succeeded: $platform"
-            else
-              echo "::error::Discovery failed for $platform; continuing other platforms"
-              failed=1
-            fi
-          done
-          exit "$failed"
-
-      - name: Commit updated company lists
+          args=("$PLATFORM")
+          if [ "$DRY_RUN" != "true" ]; then args+=(--apply); fi
+          python3 discover_commoncrawl.py "${args[@]}"
+      - name: Stage company list
         if: ${{ always() && !cancelled() && inputs.dry_run != true }}
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          python3 - <<'PY'
+          import os, shutil, sys
+          from pathlib import Path
+          sys.path.insert(0, 'dashboard')
+          from discover_commoncrawl import HERE, PLATFORMS
+          source = PLATFORMS[os.environ['PLATFORM']].csv_path
+          if source.exists():
+              target = Path('company_lists') / source.relative_to(HERE)
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(source, target)
+          PY
+      - uses: actions/upload-artifact@v5
+        if: ${{ always() && !cancelled() && inputs.dry_run != true }}
+        with:
+          name: company-list-${{ matrix.platform }}
+          path: company_lists/
+          if-no-files-found: warn
+          retention-days: 7
+
+  merge:
+    needs: [prepare, discover]
+    if: ${{ always() && !cancelled() && needs.prepare.result == 'success' && inputs.dry_run != true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install --quiet httpx
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: company-list-*
+          path: discovered_lists
+          merge-multiple: true
+      - name: Merge unique boards into current lists
+        run: python3 dashboard/merge_discovered_companies.py discovered_lists
+      - name: Commit updated company lists once
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "feat: discover new ATS companies via Common Crawl"
-          file_pattern: |
-            **/*workday.csv **/oracle.csv
-            **/*greenhouse_companies.txt **/*lever_companies.txt
-            **/*ashby_companies.txt **/*smartrecruiter_companies.txt
-            **/*jobvite_companies.txt **/icims.csv
-            **/bamboohr.csv **/teamtailor.csv
-            **/workable.csv
+          commit_message: "feat: merge ATS company discovery results"
+          file_pattern: "dashboard/**/*.csv dashboard/**/*.txt"
           commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
