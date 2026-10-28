@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from role_selection import select_roles
+from role_selection import select_roles, should_split_states
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -67,6 +67,50 @@ class RoleSelectionTests(unittest.TestCase):
         queries = ['procurement', 'commodity', 'category', 'buyer', 'purchasing', 'Sourcing']
         shards = [select_roles(queries, shard=f'{part}/6') for part in range(1, 7)]
         self.assertEqual(shards, [[query] for query in queries])
+
+    def test_every_keyword_can_split_and_all_mode_overrides_old_restrictions(self):
+        queries = ['procurement', 'commodity', 'category', 'buyer', 'purchasing', 'Sourcing']
+        for query in queries:
+            with self.subTest(query=query):
+                self.assertTrue(should_split_states(query, 'United States', True))
+                self.assertFalse(should_split_states(query, 'United States', False))
+                self.assertTrue(should_split_states(query, 'United States', False, mode='all'))
+                self.assertTrue(should_split_states(query, 'United States', True, mode='all',
+                                                    terms={'procurement', 'category', 'commodity'}))
+                self.assertFalse(should_split_states(query, 'Canada', True, mode='all'))
+
+    def test_state_mode_applies_to_all_68_roles_and_keyword_subsets(self):
+        roles = catalog()
+        self.assertTrue(all(should_split_states(role, 'USA', True) for role in roles))
+        self.assertTrue(all(should_split_states(role, 'US', False, mode='all') for role in roles))
+        queries = ['buyer', 'purchasing', 'Sourcing']
+        shards = [select_roles(queries, shard=f'{part}/6') for part in range(1, 7)]
+        self.assertEqual([role for shard in shards for role in shard], queries)
+        self.assertEqual(sum(not shard for shard in shards), 3)
+        with self.assertRaises(ValueError):
+            should_split_states('buyer', 'USA', True, mode='disabled')
+
+    def test_workflows_pass_role_selection_and_state_split_mode(self):
+        import yaml
+        def workflow(name):
+            return yaml.load((ROOT / '.github/workflows' / name).read_text(), Loader=yaml.BaseLoader)
+        procurement = workflow('linkedin_procurement_keywords.yml')
+        inputs = procurement['on']['workflow_dispatch']['inputs']
+        self.assertEqual(inputs['roles']['default'].split(','),
+                         ['procurement', 'commodity', 'category', 'buyer', 'purchasing', 'Sourcing'])
+        self.assertEqual(inputs['state_split_mode']['default'], 'all')
+        self.assertIn('inputs.roles', procurement['jobs']['scrape']['with']['search_terms'])
+        self.assertNotIn('state_split_terms', procurement['jobs']['scrape']['with'])
+        for name in ['linkedin_roles_slice.yml', 'linkedin_roles_24_45.yml', 'linkedin_roles_46_68.yml']:
+            item = workflow(name)
+            mode = item['on']['workflow_dispatch']['inputs']['state_split_mode']
+            self.assertEqual(mode['options'], ['auto', 'all'])
+            if name != 'linkedin_roles_slice.yml':
+                self.assertIn('inputs.state_split_mode', item['jobs']['scrape']['with']['state_split_mode'])
+        shared = workflow('linkedin_roles_slice.yml')
+        self.assertIn('state_split_mode', shared['on']['workflow_call']['inputs'])
+        self.assertIn('--state-split-mode "$STATE_SPLIT_MODE"',
+                      (ROOT / '.github/workflows/linkedin_roles_slice.yml').read_text())
 
     def test_workflow_exports_one_all_sheet(self):
         from openpyxl import load_workbook

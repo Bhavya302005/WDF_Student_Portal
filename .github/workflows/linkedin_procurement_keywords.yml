@@ -6,6 +6,17 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
+      roles:
+        description: "Keywords to run, comma-separated; edit this list to select a subset. Blank runs all six."
+        required: false
+        default: "procurement,commodity,category,buyer,purchasing,Sourcing"
+        type: string
+      state_split_mode:
+        description: "all: search every US state for each selected keyword; auto: split when nationwide search is capped"
+        required: false
+        default: all
+        type: choice
+        options: [all, auto]
       post_time:
         description: "How far back to collect every available job"
         required: false
@@ -18,7 +29,7 @@ jobs:
     uses: ./.github/workflows/linkedin_roles_slice.yml
     with:
       post_time: ${{ inputs.post_time || 'week' }}
-      search_terms: "procurement,commodity,category,buyer,purchasing,Sourcing"
-      state_split_terms: "procurement,category,commodity"
+      search_terms: ${{ inputs.roles || 'procurement,commodity,category,buyer,purchasing,Sourcing' }}
+      state_split_mode: ${{ inputs.state_split_mode || 'all' }}
       shards: "6"
     secrets: inherit

@@ -1,6 +1,18 @@
 """Resolve a role selection once, then split it into balanced, disjoint shards."""
 
 
+def should_split_states(role, location, capped, *, mode='auto', terms=None):
+    """All roles can expand in auto mode; explicit all overrides legacy allowlists."""
+    if mode not in {'auto', 'all'}:
+        raise ValueError('State split mode must be auto or all')
+    if location.strip().casefold() not in {'united states', 'usa', 'us', 'united states of america'}:
+        return False
+    if mode == 'all':
+        return True
+    allowed = terms is None or role.casefold() in {term.casefold() for term in terms}
+    return allowed and (capped or terms is not None)
+
+
 def select_roles(roles, *, filters=None, start_idx=1, end_idx=None, limit=None, shard=None):
     selected = list(dict.fromkeys(roles))
     # Workflow ranges own disjoint sections of the catalog. Filters narrow that
