@@ -23,6 +23,9 @@ on:
       roles:
         type: string
         default: ""
+      search_terms:
+        type: string
+        default: ""
       shards:
         type: string
         default: "8"
@@ -62,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(inputs.shards == '4' && '[1,2,3,4]' || inputs.shards == '12' && '[1,2,3,4,5,6,7,8,9,10,11,12]' || inputs.shards == '16' && '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]' || '[1,2,3,4,5,6,7,8]') }}
+        shard: ${{ fromJSON(inputs.shards == '4' && '[1,2,3,4]' || inputs.shards == '6' && '[1,2,3,4,5,6]' || inputs.shards == '12' && '[1,2,3,4,5,6,7,8,9,10,11,12]' || inputs.shards == '16' && '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]' || '[1,2,3,4,5,6,7,8]') }}
 
     steps:
       - uses: actions/checkout@v5
@@ -100,6 +103,7 @@ jobs:
         env:
           LINKEDIN_LI_AT: ${{ secrets.LINKEDIN_LI_AT }}
           ROLE_FILTER: ${{ inputs.roles }}
+          SEARCH_TERMS: ${{ inputs.search_terms }}
           POST_TIME: ${{ inputs.post_time || 'week' }}
           SHARD_COUNT: ${{ inputs.shards || '8' }}
           SHARD_NUMBER: ${{ matrix.shard }}
@@ -109,6 +113,9 @@ jobs:
                 --start-idx "$ROLE_START" --end-idx "$ROLE_END")
           if [ -n "$ROLE_FILTER" ]; then
             args+=(--roles "$ROLE_FILTER")
+          fi
+          if [ -n "$SEARCH_TERMS" ]; then
+            args+=(--search-terms "$SEARCH_TERMS")
           fi
           python3 linkedin/linkedin_68_roles.py "${args[@]}"
 
@@ -174,6 +181,7 @@ jobs:
           ROLE_START: ${{ env.ROLE_START }}
           ROLE_END:   ${{ env.ROLE_END }}
           SCRAPER_DIR: ${{ steps.root.outputs.dir }}
+          SEARCH_TERMS: ${{ inputs.search_terms }}
         run: |
           python3 - <<'PYEOF'
           import glob, csv, os, re
@@ -193,11 +201,20 @@ jobs:
                   return []
 
           all_jobs = {}
+          job_keys_by_search = {}
+          def job_key(job):
+              return (job.get('id') or job.get('job_url') or
+                      '|'.join(str(job.get(k, '')).strip().casefold()
+                               for k in ('job_title', 'company', 'location')))
           base = os.path.join(workspace, 'scraped_data')
           print(f'Looking for shards in: {base}')
           for f in sorted(glob.glob(f'{base}/**/linkedin_shard_*_jobs.csv', recursive=True)):
               for j in read_shard(f):
-                  all_jobs.setdefault(j.get('id',''), j)
+                  key = job_key(j)
+                  query = (j.get('search_role') or '').strip()
+                  if query:
+                      job_keys_by_search.setdefault(query.casefold(), set()).add(key)
+                  all_jobs.setdefault(key, j)
 
           os.makedirs('linkedin/linkedin_jobs', exist_ok=True)
 
@@ -259,20 +276,26 @@ jobs:
               return clean(df)
 
           all_df    = load('linkedin/linkedin_jobs/linkedin_jobs_all.csv')
+          enriched_by_key = {job_key(row): row for row in all_df.to_dict(orient='records')}
 
           os.makedirs('deliverables', exist_ok=True)
           s = os.environ.get('ROLE_START','0')
           e = os.environ.get('ROLE_END','68')
-          label = f"roles_{s}_to_{e}"
+          search_terms = [term.strip() for term in os.environ.get('SEARCH_TERMS', '').split(',') if term.strip()]
+          label = "keywords" if search_terms else f"roles_{s}_to_{e}"
 
           with pd.ExcelWriter(f'deliverables/jobs_{label}.xlsx', engine='openpyxl') as w:
               indexed(all_df).to_excel(w,    sheet_name='All',    index=False)
+              for term in search_terms:
+                  rows = [enriched_by_key[key] for key in job_keys_by_search.get(term.casefold(), set())
+                          if key in enriched_by_key]
+                  indexed(pd.DataFrame(rows)).to_excel(w, sheet_name=term[:31], index=False)
           print(f'jobs_{label}.xlsx: all={len(all_df)}')
           PYEOF
 
       - name: Upload deliverables
         uses: actions/upload-artifact@v5
         with:
-          name: linkedin-jobs-${{ env.ROLE_START }}-${{ env.ROLE_END }}
+          name: ${{ inputs.search_terms != '' && 'linkedin-jobs-procurement-keywords' || format('linkedin-jobs-{0}-{1}', env.ROLE_START, env.ROLE_END) }}
           retention-days: 7
-          path: ${{ steps.root.outputs.dir }}/deliverables/jobs_roles_${{ env.ROLE_START }}_to_${{ env.ROLE_END }}.xlsx
+          path: ${{ steps.root.outputs.dir }}/deliverables/${{ inputs.search_terms != '' && 'jobs_keywords.xlsx' || format('jobs_roles_{0}_to_{1}.xlsx', env.ROLE_START, env.ROLE_END) }}

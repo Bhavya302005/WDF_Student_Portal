@@ -1094,6 +1094,10 @@ def main() -> None:
         "--roles",
         help="Comma-separated role filters; resolve the combined selection before sharding",
     )
+    role_filter.add_argument(
+        "--search-terms",
+        help="Comma-separated exact LinkedIn search queries; bypasses the 68-role catalog",
+    )
     parser.add_argument(
         "--limit",
         type=int,
@@ -1203,12 +1207,21 @@ def main() -> None:
     global _deadline
     budget = args.time_budget if args.time_budget is not None else TIME_BUDGET_MIN
     _deadline = time.monotonic() + budget * 60 if budget else None
-    filters = args.roles.split(',') if args.roles is not None else ([args.role] if args.role else None)
-    try:
-        roles_to_run = select_roles(ROLES, filters=filters, start_idx=args.start_idx,
-                                    end_idx=args.end_idx, limit=args.limit, shard=args.shard)
-    except ValueError as exc:
-        parser.error(str(exc))
+    if args.search_terms is not None:
+        search_terms = list(dict.fromkeys(term.strip() for term in args.search_terms.split(',') if term.strip()))
+        if not search_terms:
+            parser.error("--search-terms must contain at least one query")
+        try:
+            roles_to_run = select_roles(search_terms, limit=args.limit, shard=args.shard)
+        except ValueError as exc:
+            parser.error(str(exc))
+    else:
+        filters = args.roles.split(',') if args.roles is not None else ([args.role] if args.role else None)
+        try:
+            roles_to_run = select_roles(ROLES, filters=filters, start_idx=args.start_idx,
+                                        end_idx=args.end_idx, limit=args.limit, shard=args.shard)
+        except ValueError as exc:
+            parser.error(str(exc))
     log.info(f"  Shard {args.shard or 'all'}: {len(roles_to_run)} roles: {roles_to_run}")
 
     run_jobs:       list[dict] = []

@@ -63,6 +63,11 @@ class RoleSelectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             select_roles(['Buyer'], filters=['unknown role'])
 
+    def test_keyword_queries_are_partitioned_exactly_once(self):
+        queries = ['procurement', 'commodity', 'category', 'buyer', 'purchasing', 'Sourcing']
+        shards = [select_roles(queries, shard=f'{part}/6') for part in range(1, 7)]
+        self.assertEqual(shards, [[query] for query in queries])
+
     def test_workflow_exports_one_all_sheet(self):
         from openpyxl import load_workbook
         workflow = (ROOT / '.github/workflows/linkedin_roles_slice.yml').read_text()
