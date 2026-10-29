@@ -2,10 +2,16 @@ name: LinkedIn Procurement Keywords
 
 permissions:
   contents: read
+  actions: read
 
 on:
   workflow_dispatch:
     inputs:
+      resume_run_id:
+        description: "Continue an earlier run ID while preserving its saved jobs"
+        required: false
+        default: ""
+        type: string
       roles:
         description: "Keywords to run, comma-separated; edit this list to select a subset. Blank runs all six."
         required: false
@@ -28,6 +34,7 @@ jobs:
   scrape:
     uses: ./.github/workflows/linkedin_roles_slice.yml
     with:
+      resume_run_id: ${{ inputs.resume_run_id }}
       post_time: ${{ inputs.post_time || 'week' }}
       search_terms: ${{ inputs.roles || 'procurement,commodity,category,buyer,purchasing,Sourcing' }}
       state_split_mode: ${{ inputs.state_split_mode || 'all' }}

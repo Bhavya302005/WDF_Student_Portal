@@ -2,10 +2,16 @@ name: LinkedIn Roles 24-45
 
 permissions:
   contents: read
+  actions: read
 
 on:
   workflow_dispatch:
     inputs:
+      resume_run_id:
+        description: "Continue an earlier run ID while preserving its saved jobs"
+        required: false
+        default: ""
+        type: string
       state_split_mode:
         description: "auto: split capped nationwide searches by US state; all: always search every US state"
         required: false
@@ -24,7 +30,7 @@ on:
         default: "Head of Procurement, Procurement Officer, Procurement Coordinator, Procurement Engineer, Procurement Assistant, Sourcing Manager, Sourcing Specialist, Strategic Sourcing Manager, Senior Manager Strategic Sourcing, Senior Sourcing Analyst, Senior Sourcing Manager, Senior Sourcing Specialist, Assistant Sourcing Manager, Global Sourcing Lead, Senior Manager Global Sourcing, Strategic Sourcing Specialist, Sourcing Lead, Buyer, Senior Buyer, Purchasing Manager, Purchasing Representative, Procurement Buyer"
         type: string
       shards:
-        description: "Number of parallel runners"
+        description: "Maximum simultaneous task runners"
         required: false
         default: "8"
         type: choice
@@ -34,6 +40,7 @@ jobs:
   scrape:
     uses: ./.github/workflows/linkedin_roles_slice.yml
     with:
+      resume_run_id: ${{ inputs.resume_run_id }}
       role_start: 24
       role_end: 45
       state_split_mode: ${{ inputs.state_split_mode || 'auto' }}

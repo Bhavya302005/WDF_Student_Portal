@@ -8,12 +8,14 @@ on:
       - dashboard/job_extraction/**
       - dashboard/db/linkedin_reposts.py
       - dashboard/db/neon_upsert.py
+      - .github/actions/linkedin-task/**
   push:
     branches: [main]
     paths:
       - .github/workflows/linkedin_*.yml
       - dashboard/linkedin/**
       - dashboard/job_extraction/**
+      - .github/actions/linkedin-task/**
 
 permissions:
   contents: read
@@ -40,3 +42,5 @@ jobs:
         run: |
           python -m unittest discover -s linkedin -p test_role_selection.py -v
           python -m unittest discover -s linkedin -p test_linkedin_68_roles.py -v
+          python -m unittest discover -s linkedin -p test_linkedin_guest.py -v
+          python -m unittest discover -s linkedin -p test_task_pipeline.py -v

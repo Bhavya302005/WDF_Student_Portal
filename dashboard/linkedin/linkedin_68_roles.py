@@ -289,8 +289,11 @@ def sanitize(obj: Any) -> Any:
     return obj
 
 
-def make_job_id(title: str, company: str, location: str) -> str:
-    """Stable MD5 dedup key — survives across roles and runs."""
+def make_job_id(title: str, company: str, location: str, job_url: str | None = None) -> str:
+    """Posting identity when available; legacy composite hash otherwise."""
+    match = re.search(r'/jobs/view/(?:[^/?#]*-)?(\d+)', job_url or '')
+    if match:
+        return 'linkedin-' + match[1]
     key = f"linkedin:{title.lower().strip()}:{company.lower().strip()}:{location.lower().strip()}"
     return hashlib.md5(key.encode()).hexdigest()
 
@@ -736,6 +739,7 @@ def _merge_job_details(job: dict[str, Any], details: dict[str, Any]) -> None:
 def async_fetch_job_details(
     jobs: list[dict],
     workers: int = DESC_WORKERS,
+    on_result=None,
 ) -> list[dict]:
     """Fetch full LinkedIn details for every job and merge them in place."""
     to_fetch = [(index, job) for index, job in enumerate(jobs) if job.get("job_url")]
@@ -758,13 +762,16 @@ def async_fetch_job_details(
                     fetched += 1
             except Exception as exc:
                 log.debug("    Detail fetch failed for job idx %d: %s", index, exc)
+                continue
+            if details and on_result is not None:
+                on_result(jobs[index])
     log.info("    Structured details fetched: %d/%d", fetched, len(to_fetch))
     return jobs
 
 
-def fetch_job_details_with_retry(jobs: list[dict], workers: int = DESC_WORKERS) -> list[dict]:
+def fetch_job_details_with_retry(jobs: list[dict], workers: int = DESC_WORKERS, on_result=None) -> list[dict]:
     """Fetch details, then retry blocked/incomplete pages at lower concurrency."""
-    async_fetch_job_details(jobs, workers=workers)
+    async_fetch_job_details(jobs, workers=workers, on_result=on_result)
     missing = [
         job for job in jobs
         if not job.get("_linkedin_detail_fetched")
@@ -776,7 +783,7 @@ def fetch_job_details_with_retry(jobs: list[dict], workers: int = DESC_WORKERS) 
             len(missing), DESC_RETRY_WORKERS, DESC_RETRY_DELAY,
         )
         time.sleep(DESC_RETRY_DELAY)
-        async_fetch_job_details(missing, workers=DESC_RETRY_WORKERS)
+        async_fetch_job_details(missing, workers=DESC_RETRY_WORKERS, on_result=on_result)
     return jobs
 
 
@@ -869,6 +876,9 @@ def scrape_role(
     base_delay_sec: float = BASE_DELAY_SEC,
     desc_workers: int = DESC_WORKERS,
     work_type: str | None = None,
+    start_offset: int = 0,
+    on_page=None,
+    stop_on_irrelevant: bool = True,
 ) -> tuple[list[dict], dict]:
     """
     Scrape LinkedIn for one role title (optionally one work type: 1 on-site, 2 remote, 3 hybrid).
@@ -879,8 +889,9 @@ def scrape_role(
 
     all_jobs: list[dict] = []
     seen_urls: set[str] = set()
-    offset = 0
-    stats = {"batches": 0, "hit_429": False, "found": 0, "capped": False, "blocked": False}
+    offset = start_offset
+    stats = {"batches": 0, "hit_429": False, "found": 0, "capped": False, "blocked": False,
+             "next_offset": offset, "exhausted": False, "stop_reason": 'pending'}
     batches_without_new = 0
     batches_without_match = 0
 
@@ -888,6 +899,7 @@ def scrape_role(
         if out_of_time():
             log.warning("    Time budget used up: keeping what this role has so far.")
             stats["blocked"] = stats["blocked"] or stats["batches"] == 0
+            stats['stop_reason'] = 'time_budget'
             break
         # Polite delay between pages
         if offset > 0:
@@ -920,6 +932,7 @@ def scrape_role(
                             "Stopping pages for this role."
                         )
                         stats["blocked"] = True
+                        stats['stop_reason'] = 'rate_limited'
                         return all_jobs, stats
                     log.warning(
                         f"    429/Rate-limit detected — pausing {wait:.0f}s "
@@ -943,8 +956,10 @@ def scrape_role(
             # The guest endpoint's final probe starts at 1,000 and returns an
             # empty, end-marked frame. Preserve that as a cap signal so main()
             # continues with state searches instead of calling it complete.
-            if batch_df is not None and offset >= GUEST_LIMIT and stats["found"] >= GUEST_LIMIT:
+            if batch_df is not None and offset >= GUEST_LIMIT:
                 stats["capped"] = True
+            stats['exhausted'] = batch_df is not None and bool(batch_df.attrs.get('end'))
+            stats['stop_reason'] = 'cap' if stats['capped'] else ('observed_end' if stats['exhausted'] else 'request_failed')
             log.info(f"    No more results for '{role}'.")
             break
 
@@ -969,7 +984,7 @@ def scrape_role(
             desc    = str(row.get("description", "") or "")[:5000]
 
             # Global cross-role dedup via MD5
-            job_id = make_job_id(title, company, loc)
+            job_id = make_job_id(title, company, loc, url)
             if job_id in global_seen_ids:
                 continue
             global_seen_ids.add(job_id)
@@ -1048,32 +1063,51 @@ def scrape_role(
             f"(role running total: {len(all_jobs)})"
         )
 
+        page_new = all_jobs[-new_in_batch:] if new_in_batch else []
+        if on_page is not None:
+            on_page(page_new, {'next_offset': offset, 'done': False, 'reason': 'details_pending'})
+
         # Fetch each job page once for all published structured details, then
         # derive matching fields only after the best description is available.
         if fetch_description and new_in_batch > 0:
             page_new = all_jobs[-new_in_batch:]
-            page_new = fetch_job_details_with_retry(page_new, workers=desc_workers)
+            detail_callback = (lambda job: on_page([job], {'next_offset': offset, 'done': False,
+                                                        'reason': 'details_pending'})) if on_page is not None else None
+            page_new = fetch_job_details_with_retry(page_new, workers=desc_workers, on_result=detail_callback)
             all_jobs[-new_in_batch:] = enrich_jobs_after_details(page_new)
         elif new_in_batch > 0:
             page_new = all_jobs[-new_in_batch:]
             all_jobs[-new_in_batch:] = enrich_jobs_after_details(page_new)
 
+        stats['next_offset'] = int(batch_df.attrs.get('next_offset', offset + BATCH_SIZE))
+        if on_page is not None:
+            on_page(all_jobs[-new_in_batch:] if new_in_batch else [],
+                    {'next_offset': stats['next_offset'], 'done': False, 'reason': 'page_saved'})
+        if batch_df.attrs.get('incomplete'):
+            stats['blocked'] = True
+            stats['hit_429'] = bool(batch_df.attrs.get('rate_limited'))
+            stats['stop_reason'] = batch_df.attrs.get('stop_reason', 'request_failed')
+            break
         # The end is an empty page or LinkedIn's limit, not a short batch: a throttled or partly repeated
         # batch can be short with many results still to come
         batches_without_new = batches_without_new + 1 if listed_new == 0 else 0
         if batch_df.attrs.get("end"):
             stats["capped"] = offset + BATCH_SIZE >= GUEST_LIMIT
+            stats['exhausted'] = not stats['capped']
+            stats['stop_reason'] = 'cap' if stats['capped'] else 'observed_end'
             log.info("    Reached LinkedIn's result limit." if stats["capped"] else "    End of results.")
             break
-        if batches_without_new >= 2:
+        if stop_on_irrelevant and batches_without_new >= 2:
+            stats['stop_reason'] = 'repeats'
             log.info("    Only repeats in the last two batches: end of results.")
             break
         batches_without_match = batches_without_match + 1 if title_matches == 0 else 0
-        if batches_without_match >= 2:
+        if stop_on_irrelevant and batches_without_match >= 2:
+            stats['stop_reason'] = 'title_heuristic'
             log.info(f"    No '{role}' titles in the last two batches: the rest is loosely related, stopping.")
             break
 
-        offset += BATCH_SIZE
+        offset = stats['next_offset']
 
     return all_jobs, stats
 

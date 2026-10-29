@@ -41,7 +41,7 @@ class GuestSearchTests(unittest.TestCase):
             return mock.Mock(status_code=200, text=page(range(start, start + 10)) if start < 30 else "")
         with mock.patch.object(guest, "_http", return_value=mock.Mock(get=fake_get)), mock.patch.object(guest.time, "sleep"):
             first = guest.search_batch("Buyer", "United States", 24, 0, 50)
-        self.assertEqual([0, 10, 20, 30], calls)  # 10 per request, no skipped results
+        self.assertEqual([0, 10, 20, 30, 30, 30], calls)  # retry an empty page before observing the end
         self.assertEqual(30, len(first))
         self.assertTrue(first.attrs["end"])
 
@@ -49,6 +49,28 @@ class GuestSearchTests(unittest.TestCase):
         with mock.patch.object(guest, "_http", return_value=mock.Mock(get=lambda url: mock.Mock(status_code=429))):
             with self.assertRaisesRegex(RuntimeError, "429"):
                 guest.search_batch("Buyer", "United States", 24, 0, 50)
+
+    def test_later_rate_limit_returns_already_fetched_cards_and_failed_cursor(self):
+        def fake_get(url):
+            start = int(url.rsplit('start=', 1)[1])
+            return mock.Mock(status_code=429 if start == 20 else 200, text=page(range(start, start+10)))
+        with mock.patch.object(guest, '_http', return_value=mock.Mock(get=fake_get)), mock.patch.object(guest.time, 'sleep'):
+            result = guest.search_batch('Buyer', 'United States', 24, 0, 50)
+        self.assertEqual(len(result), 20)
+        self.assertEqual(result.attrs['next_offset'], 20)
+        self.assertTrue(result.attrs['incomplete'])
+        self.assertFalse(result.attrs['end'])
+
+    def test_transient_empty_page_is_retried_at_the_same_offset(self):
+        calls = []
+        def fake_get(url):
+            start = int(url.rsplit('start=', 1)[1]); calls.append(start)
+            return mock.Mock(status_code=200, text='' if len(calls) == 1 else page(range(start, start+10)))
+        with mock.patch.object(guest, '_http', return_value=mock.Mock(get=fake_get)), mock.patch.object(guest.time, 'sleep'):
+            result = guest.search_batch('Buyer', 'United States', 24, 0, 20)
+        self.assertEqual(calls, [0, 0, 10])
+        self.assertEqual(len(result), 20)
+        self.assertFalse(result.attrs['end'])
 
 
 class PagingTests(unittest.TestCase):
@@ -81,6 +103,16 @@ class PagingTests(unittest.TestCase):
                                  (self.rows(range(100, 150), "Nurse"), False),
                                  (self.rows(range(150, 200)), False)])
         self.assertEqual(150, len(jobs))  # two batches without a Buyer title: the last one is never asked for
+
+    def test_checkpointed_tasks_keep_paging_after_nonmatching_titles(self):
+        frames = []
+        for ids, title, end in [(range(50), 'Buyer', False), (range(50,100), 'Other', False),
+                                (range(100,150), 'Other', False), (range(150,200), 'Buyer', True)]:
+            frame = pd.DataFrame(self.rows(ids, title)); frame.attrs['end'] = end; frames.append(frame)
+        with mock.patch.object(roles, 'search_batch', side_effect=frames), mock.patch.object(roles.time, 'sleep'), \
+             mock.patch.object(roles, 'enrich_jobs_after_details', side_effect=lambda rows: rows):
+            jobs, _ = roles.scrape_role('Buyer', 'United States', 24, set(), False, stop_on_irrelevant=False)
+        self.assertEqual(len(jobs), 200)
 
     def test_reaching_linkedins_limit_is_reported(self):
         batches = [(self.rows(range(i, i + 50)), i + 50 >= 1000) for i in range(0, 1000, 50)]

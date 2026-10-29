@@ -109,7 +109,7 @@ class RoleSelectionTests(unittest.TestCase):
                 self.assertIn('inputs.state_split_mode', item['jobs']['scrape']['with']['state_split_mode'])
         shared = workflow('linkedin_roles_slice.yml')
         self.assertIn('state_split_mode', shared['on']['workflow_call']['inputs'])
-        self.assertIn('--state-split-mode "$STATE_SPLIT_MODE"',
+        self.assertIn('--state-mode "$STATE_SPLIT_MODE"',
                       (ROOT / '.github/workflows/linkedin_roles_slice.yml').read_text())
 
     def test_screenshot_additions_are_unique_and_in_the_last_workflow(self):
@@ -142,7 +142,7 @@ class RoleSelectionTests(unittest.TestCase):
                  'job_url': 'https://www.linkedin.com/jobs/view/4999999999', 'reposted': True,
                  'reposted_source': 'linkedin_label', 'reposted_confidence': 'explicit'},
             ], [
-                {'id': 'one', 'job_title': 'Buyer', 'description': 'Duplicate row', 'job_url': 'https://example.com/1'},
+                {'id': 'one', 'job_title': 'Buyer', 'description': 'Duplicate row', 'job_url': 'https://www.linkedin.com/jobs/view/4999999999'},
                 {'id': 'two', 'job_title': 'Manager', 'description': 'Manage sourcing.\nRequired: SQL.', 'job_url': 'https://example.com/2'},
             ]), 1):
                 folder = root / f'scraped_data/shard-{shard}'
@@ -151,6 +151,14 @@ class RoleSelectionTests(unittest.TestCase):
                     writer = csv.DictWriter(f, fieldnames=list(rows[0]))
                     writer.writeheader()
                     writer.writerows(rows)
+            # A worker can be interrupted after its last CSV snapshot. Its
+            # durable journal must still supply every later posting.
+            journal = root/'scraped_data/shard-3/linkedin_shard_3-8_jobs.jsonl'
+            journal.parent.mkdir()
+            import json
+            journal.write_text(json.dumps({'id': 'one', 'job_title': 'Buyer',
+                'description': 'Different vacancy with the same legacy ID.',
+                'job_url': 'https://www.linkedin.com/jobs/view/4999999998'})+'\n')
             cwd = Path.cwd()
             try:
                 with patch.dict(os.environ, {'GITHUB_WORKSPACE': str(root), 'SCRAPER_DIR': 'dashboard',
@@ -164,12 +172,12 @@ class RoleSelectionTests(unittest.TestCase):
             book = load_workbook(files[0], read_only=True)
             self.assertEqual(book.sheetnames, ['All'])
             rows = list(book['All'].values)
-            self.assertEqual(len(rows), 3)
+            self.assertEqual(len(rows), 4)
             id_column = rows[0].index('id')
-            self.assertEqual({r[id_column] for r in rows[1:]}, {'one', 'two'})
+            self.assertEqual({r[id_column] for r in rows[1:]}, {'linkedin-4999999999', 'linkedin-4999999998', 'two'})
             by_id = {r[id_column]: r for r in rows[1:]}
-            self.assertEqual(by_id['one'][rows[0].index('reposted_source')], 'linkedin_label')
-            self.assertEqual(by_id['one'][rows[0].index('repost_status')], 'Reposted')
+            self.assertEqual(by_id['linkedin-4999999999'][rows[0].index('reposted_source')], 'linkedin_label')
+            self.assertEqual(by_id['linkedin-4999999999'][rows[0].index('repost_status')], 'Reposted')
             self.assertEqual(by_id['two'][rows[0].index('repost_status')], 'Unknown')
             book.close()
 
