@@ -111,23 +111,47 @@ def search_batch(role: str, location: str, hours_old: int | None, offset: int, s
         query.update(filters)
     rows: list[dict] = []
     end = False
+    incomplete = False
+    rate_limited = False
+    reason = ''
+    next_offset = offset
     for start in range(offset, offset + size, PAGE):
         if start >= LIMIT:
             end = True
             break
-        response = _http().get(f"{SEARCH}?{urlencode(query)}&start={start}")
-        if response.status_code == 429:
-            raise RuntimeError(f"429 rate limit at start={start}")
-        if response.status_code == 400 and start >= LIMIT - 100:
-            end = True  # past LinkedIn's limit
+        try:
+            for probe in range(3):
+                response = _http().get(f"{SEARCH}?{urlencode(query)}&start={start}")
+                if response.status_code == 429:
+                    raise RuntimeError(f"429 rate limit at start={start}")
+                if response.status_code == 400 and start >= LIMIT - 100:
+                    end = True
+                    break
+                response.raise_for_status()
+                cards = parse_cards(response.text)
+                if cards: break
+                if any(marker in response.text.lower() for marker in ('authwall', 'security verification', 'unusual activity', 'captcha')):
+                    raise RuntimeError('captcha or authentication wall instead of job results')
+                if probe < 2: time.sleep(random.uniform(8, 15))
+            if end: break
+        except Exception as exc:
+            if not rows: raise
+            # A failure on request 5 must not discard requests 1 through 4.
+            incomplete = True
+            rate_limited = '429' in str(exc)
+            reason = 'rate_limited' if rate_limited else 'request_failed'
+            next_offset = start
             break
-        response.raise_for_status()
-        cards = parse_cards(response.text)
         if not cards:
             end = True
             break
         rows += cards
+        next_offset = start + PAGE
         time.sleep(random.uniform(*pause))
     frame = pd.DataFrame(rows)
     frame.attrs["end"] = end
+    frame.attrs['next_offset'] = next_offset
+    frame.attrs['incomplete'] = incomplete
+    frame.attrs['rate_limited'] = rate_limited
+    frame.attrs['stop_reason'] = reason
     return frame

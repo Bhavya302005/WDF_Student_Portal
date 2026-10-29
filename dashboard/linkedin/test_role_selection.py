@@ -20,11 +20,11 @@ def catalog():
 
 
 class RoleSelectionTests(unittest.TestCase):
-    def test_three_workflows_cover_all_68_roles_without_overlap(self):
+    def test_three_workflows_cover_all_80_roles_without_overlap(self):
         roles = catalog()
-        self.assertEqual(len(roles), 68)
+        self.assertEqual(len(roles), 80)
         combined = []
-        for start, end in ((1, 23), (24, 45), (46, 68)):
+        for start, end in ((1, 23), (24, 45), (46, 80)):
             selected = roles[start-1:end]
             shards = [select_roles(roles, filters=selected, start_idx=start, end_idx=end,
                                    shard=f'{part}/8') for part in range(1, 9)]
@@ -32,7 +32,7 @@ class RoleSelectionTests(unittest.TestCase):
             self.assertEqual(flattened, selected)
             combined.extend(flattened)
         self.assertEqual(combined, roles)
-        self.assertEqual(len(set(combined)), 68)
+        self.assertEqual(len({role.casefold() for role in combined}), 80)
 
     def test_default_selection_is_balanced_and_scraped_once(self):
         roles = catalog()
@@ -79,7 +79,7 @@ class RoleSelectionTests(unittest.TestCase):
                                                     terms={'procurement', 'category', 'commodity'}))
                 self.assertFalse(should_split_states(query, 'Canada', True, mode='all'))
 
-    def test_state_mode_applies_to_all_68_roles_and_keyword_subsets(self):
+    def test_state_mode_applies_to_all_catalog_roles_and_keyword_subsets(self):
         roles = catalog()
         self.assertTrue(all(should_split_states(role, 'USA', True) for role in roles))
         self.assertTrue(all(should_split_states(role, 'US', False, mode='all') for role in roles))
@@ -109,8 +109,23 @@ class RoleSelectionTests(unittest.TestCase):
                 self.assertIn('inputs.state_split_mode', item['jobs']['scrape']['with']['state_split_mode'])
         shared = workflow('linkedin_roles_slice.yml')
         self.assertIn('state_split_mode', shared['on']['workflow_call']['inputs'])
-        self.assertIn('--state-split-mode "$STATE_SPLIT_MODE"',
+        self.assertIn('--state-mode "$STATE_SPLIT_MODE"',
                       (ROOT / '.github/workflows/linkedin_roles_slice.yml').read_text())
+
+    def test_screenshot_additions_are_unique_and_in_the_last_workflow(self):
+        import yaml
+        additions = ['Director of Procurement', 'Procurement Analyst', 'Commodity Trader',
+                     'Director of Purchasing', 'Category Buyer', 'Strategic Sourcing Analyst',
+                     'Media Buyer', 'Commodity Broker', 'Sourcing Associate', 'Strategic Sourcing Lead',
+                     'Sourcing Director', 'Global Sourcing Manager']
+        roles = catalog()
+        self.assertEqual(roles[68:], additions)
+        self.assertEqual([roles[i-1] for i in [1, 23, 45, 68]],
+                         ['Senior Commodity Manager', 'Senior Procurement Consultant', 'Procurement Buyer', 'Purchasing Agent'])
+        workflow = yaml.load((ROOT / '.github/workflows/linkedin_roles_46_68.yml').read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(workflow['jobs']['scrape']['with']['role_end'], '80')
+        filters = workflow['on']['workflow_dispatch']['inputs']['roles']['default'].split(',')
+        self.assertEqual(select_roles(roles, filters=filters, start_idx=46, end_idx=80), roles[45:])
 
     def test_workflow_exports_one_all_sheet(self):
         from openpyxl import load_workbook
@@ -127,7 +142,7 @@ class RoleSelectionTests(unittest.TestCase):
                  'job_url': 'https://www.linkedin.com/jobs/view/4999999999', 'reposted': True,
                  'reposted_source': 'linkedin_label', 'reposted_confidence': 'explicit'},
             ], [
-                {'id': 'one', 'job_title': 'Buyer', 'description': 'Duplicate row', 'job_url': 'https://example.com/1'},
+                {'id': 'one', 'job_title': 'Buyer', 'description': 'Duplicate row', 'job_url': 'https://www.linkedin.com/jobs/view/4999999999'},
                 {'id': 'two', 'job_title': 'Manager', 'description': 'Manage sourcing.\nRequired: SQL.', 'job_url': 'https://example.com/2'},
             ]), 1):
                 folder = root / f'scraped_data/shard-{shard}'
@@ -136,6 +151,14 @@ class RoleSelectionTests(unittest.TestCase):
                     writer = csv.DictWriter(f, fieldnames=list(rows[0]))
                     writer.writeheader()
                     writer.writerows(rows)
+            # A worker can be interrupted after its last CSV snapshot. Its
+            # durable journal must still supply every later posting.
+            journal = root/'scraped_data/shard-3/linkedin_shard_3-8_jobs.jsonl'
+            journal.parent.mkdir()
+            import json
+            journal.write_text(json.dumps({'id': 'one', 'job_title': 'Buyer',
+                'description': 'Different vacancy with the same legacy ID.',
+                'job_url': 'https://www.linkedin.com/jobs/view/4999999998'})+'\n')
             cwd = Path.cwd()
             try:
                 with patch.dict(os.environ, {'GITHUB_WORKSPACE': str(root), 'SCRAPER_DIR': 'dashboard',
@@ -149,12 +172,12 @@ class RoleSelectionTests(unittest.TestCase):
             book = load_workbook(files[0], read_only=True)
             self.assertEqual(book.sheetnames, ['All'])
             rows = list(book['All'].values)
-            self.assertEqual(len(rows), 3)
+            self.assertEqual(len(rows), 4)
             id_column = rows[0].index('id')
-            self.assertEqual({r[id_column] for r in rows[1:]}, {'one', 'two'})
+            self.assertEqual({r[id_column] for r in rows[1:]}, {'linkedin-4999999999', 'linkedin-4999999998', 'two'})
             by_id = {r[id_column]: r for r in rows[1:]}
-            self.assertEqual(by_id['one'][rows[0].index('reposted_source')], 'linkedin_label')
-            self.assertEqual(by_id['one'][rows[0].index('repost_status')], 'Reposted')
+            self.assertEqual(by_id['linkedin-4999999999'][rows[0].index('reposted_source')], 'linkedin_label')
+            self.assertEqual(by_id['linkedin-4999999999'][rows[0].index('repost_status')], 'Reposted')
             self.assertEqual(by_id['two'][rows[0].index('repost_status')], 'Unknown')
             book.close()
 

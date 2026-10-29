@@ -1,0 +1,66 @@
+name: Checkpointed LinkedIn task
+description: Run one role and a bounded group of regions, retaining durable partial results.
+inputs:
+  task:
+    required: true
+    description: Planned task JSON
+  post_time:
+    required: true
+    description: Publication window
+  resume_run_id:
+    required: false
+    default: ''
+    description: Earlier run to restore this task from
+  github_token:
+    required: true
+    description: Token for reading this repository's run artifacts
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+    - name: Install scraper dependencies
+      shell: bash
+      run: pip install --quiet httpx pandas openpyxl python-dotenv beautifulsoup4 curl_cffi
+    - name: Restore this task's checkpoint
+      id: restore
+      if: inputs.resume_run_id != ''
+      continue-on-error: true
+      uses: actions/download-artifact@v5
+      with:
+        name: linkedin-task-${{ fromJSON(inputs.task).id }}
+        path: resume_task
+        run-id: ${{ inputs.resume_run_id }}
+        github-token: ${{ inputs.github_token }}
+    - name: Collect and checkpoint
+      shell: bash
+      env:
+        TASK: ${{ inputs.task }}
+        POST_TIME: ${{ inputs.post_time }}
+        RESUME_REQUESTED: ${{ inputs.resume_run_id }}
+        RESTORE_OUTCOME: ${{ steps.restore.outcome }}
+      run: |
+        if [ -n "$RESUME_REQUESTED" ] && [ "$RESTORE_OUTCOME" != 'success' ]; then
+          echo '::notice::No matching task checkpoint restored. Older saved jobs are still included by the delivery job.'
+        fi
+        set +e
+        python3 dashboard/linkedin/task_pipeline.py crawl --task-json "$TASK" --post-time "$POST_TIME" \
+          --output task_results --resume resume_task --minutes 330
+        result=$?
+        set -e
+        if [ "$result" -eq 3 ]; then
+          echo '::warning::Task saved partial results. Pending regions/capped searches are listed in its summary and checkpoint.'
+        elif [ "$result" -ne 0 ]; then
+          exit "$result"
+        fi
+    - name: Preserve task data and checkpoint
+      if: always()
+      uses: actions/upload-artifact@v5
+      with:
+        name: linkedin-task-${{ fromJSON(inputs.task).id }}
+        path: |
+          task_results/*_jobs.jsonl
+          task_results/*_state.json
+        retention-days: 30
+        if-no-files-found: warn
