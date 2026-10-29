@@ -297,7 +297,7 @@ jobs:
 
           os.makedirs('deliverables', exist_ok=True)
           s = os.environ.get('ROLE_START','0')
-          e = os.environ.get('ROLE_END','68')
+          e = os.environ.get('ROLE_END','80')
           search_terms = [term.strip() for term in os.environ.get('SEARCH_TERMS', '').split(',') if term.strip()]
           label = "keywords" if search_terms else f"roles_{s}_to_{e}"
 

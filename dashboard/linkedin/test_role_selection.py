@@ -20,11 +20,11 @@ def catalog():
 
 
 class RoleSelectionTests(unittest.TestCase):
-    def test_three_workflows_cover_all_68_roles_without_overlap(self):
+    def test_three_workflows_cover_all_80_roles_without_overlap(self):
         roles = catalog()
-        self.assertEqual(len(roles), 68)
+        self.assertEqual(len(roles), 80)
         combined = []
-        for start, end in ((1, 23), (24, 45), (46, 68)):
+        for start, end in ((1, 23), (24, 45), (46, 80)):
             selected = roles[start-1:end]
             shards = [select_roles(roles, filters=selected, start_idx=start, end_idx=end,
                                    shard=f'{part}/8') for part in range(1, 9)]
@@ -32,7 +32,7 @@ class RoleSelectionTests(unittest.TestCase):
             self.assertEqual(flattened, selected)
             combined.extend(flattened)
         self.assertEqual(combined, roles)
-        self.assertEqual(len(set(combined)), 68)
+        self.assertEqual(len({role.casefold() for role in combined}), 80)
 
     def test_default_selection_is_balanced_and_scraped_once(self):
         roles = catalog()
@@ -79,7 +79,7 @@ class RoleSelectionTests(unittest.TestCase):
                                                     terms={'procurement', 'category', 'commodity'}))
                 self.assertFalse(should_split_states(query, 'Canada', True, mode='all'))
 
-    def test_state_mode_applies_to_all_68_roles_and_keyword_subsets(self):
+    def test_state_mode_applies_to_all_catalog_roles_and_keyword_subsets(self):
         roles = catalog()
         self.assertTrue(all(should_split_states(role, 'USA', True) for role in roles))
         self.assertTrue(all(should_split_states(role, 'US', False, mode='all') for role in roles))
@@ -111,6 +111,21 @@ class RoleSelectionTests(unittest.TestCase):
         self.assertIn('state_split_mode', shared['on']['workflow_call']['inputs'])
         self.assertIn('--state-split-mode "$STATE_SPLIT_MODE"',
                       (ROOT / '.github/workflows/linkedin_roles_slice.yml').read_text())
+
+    def test_screenshot_additions_are_unique_and_in_the_last_workflow(self):
+        import yaml
+        additions = ['Director of Procurement', 'Procurement Analyst', 'Commodity Trader',
+                     'Director of Purchasing', 'Category Buyer', 'Strategic Sourcing Analyst',
+                     'Media Buyer', 'Commodity Broker', 'Sourcing Associate', 'Strategic Sourcing Lead',
+                     'Sourcing Director', 'Global Sourcing Manager']
+        roles = catalog()
+        self.assertEqual(roles[68:], additions)
+        self.assertEqual([roles[i-1] for i in [1, 23, 45, 68]],
+                         ['Senior Commodity Manager', 'Senior Procurement Consultant', 'Procurement Buyer', 'Purchasing Agent'])
+        workflow = yaml.load((ROOT / '.github/workflows/linkedin_roles_46_68.yml').read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(workflow['jobs']['scrape']['with']['role_end'], '80')
+        filters = workflow['on']['workflow_dispatch']['inputs']['roles']['default'].split(',')
+        self.assertEqual(select_roles(roles, filters=filters, start_idx=46, end_idx=80), roles[45:])
 
     def test_workflow_exports_one_all_sheet(self):
         from openpyxl import load_workbook

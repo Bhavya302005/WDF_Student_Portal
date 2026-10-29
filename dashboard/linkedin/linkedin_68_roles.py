@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-LinkedIn 68-Roles Job Scraper
+LinkedIn Role-Catalog Job Scraper
 ==============================
-Scrapes LinkedIn for all 68 procurement/sourcing/buying roles, with:
+Scrapes LinkedIn for the configured procurement/sourcing/buying roles, with:
 
   - Configurable post time  (--post-time day|week|month|any)
   - US-only results         (--location flag)
@@ -119,7 +119,7 @@ except Exception:
     def split_jd_sections(description: str) -> dict[str, str]:  # type: ignore[misc]
         return {}
 
-# -- 68 Roles -----------------------------------------------------------------
+# -- Role catalog (append new titles to preserve existing workflow indices) ----
 
 ROLES: list[str] = [
     "Senior Commodity Manager",
@@ -190,6 +190,18 @@ ROLES: list[str] = [
     "Purchasing Consultant",
     "Purchasing Associate",
     "Purchasing Agent",
+    "Director of Procurement",
+    "Procurement Analyst",
+    "Commodity Trader",
+    "Director of Purchasing",
+    "Category Buyer",
+    "Strategic Sourcing Analyst",
+    "Media Buyer",
+    "Commodity Broker",
+    "Sourcing Associate",
+    "Strategic Sourcing Lead",
+    "Sourcing Director",
+    "Global Sourcing Manager",
 ]
 
 # -- Rate-limit / retry tuning ------------------------------------------------
@@ -1070,7 +1082,7 @@ def scrape_role(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="LinkedIn 68-Roles Scraper — procurement/sourcing/buying jobs"
+        description=f"LinkedIn {len(ROLES)}-Roles Scraper — procurement/sourcing/buying jobs"
     )
     parser.add_argument(
         "--post-time",
@@ -1101,7 +1113,7 @@ def main() -> None:
     )
     role_filter.add_argument(
         "--search-terms",
-        help="Comma-separated exact LinkedIn search queries; bypasses the 68-role catalog",
+        help="Comma-separated exact LinkedIn search queries; bypasses the role catalog",
     )
     parser.add_argument(
         "--limit",
@@ -1197,7 +1209,7 @@ def main() -> None:
                          if args.state_split_terms is not None else None)
 
     log.info("=" * 65)
-    log.info("LINKEDIN 68-ROLES SCRAPER")
+    log.info(f"LINKEDIN {len(ROLES)}-ROLES SCRAPER")
     log.info(f"  Roles        : {len(ROLES)}")
     log.info(f"  Post-time    : {args.post_time}" + (f" ({hours_old}h)" if hours_old else " (any time)"))
     log.info(f"  Location     : {args.location}")

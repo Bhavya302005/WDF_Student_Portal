@@ -1,4 +1,4 @@
-name: LinkedIn Roles 46-68
+name: LinkedIn Roles 46-80
 
 permissions:
   contents: read
@@ -19,9 +19,9 @@ on:
         type: choice
         options: [day, week, 3week, month, any]
       roles:
-        description: "Comma-separated filters within roles 46-68; blank runs the whole range."
+        description: "Comma-separated filters within roles 46-80; blank runs the whole range."
         required: false
-        default: "Commodity Analyst, Senior Purchasing Agent, Senior Purchasing Specialist, Assistant Purchasing Agent, Purchasing Assistant, Senior Purchasing Analyst, Senior Purchasing Officer, Purchasing Coordinator, Associate Buyer, Senior Purchasing Assistant, Purchasing Supervisor, Purchase Specialist, Junior Buyer, Purchasing Officer, Senior Purchasing Manager, Purchasing Analyst, Purchasing Buyer, Materials Buyer, Assistant Buyer, Assistant Purchasing Manager, Purchasing Consultant, Purchasing Associate, Purchasing Agent"
+        default: "Commodity Analyst, Senior Purchasing Agent, Senior Purchasing Specialist, Assistant Purchasing Agent, Purchasing Assistant, Senior Purchasing Analyst, Senior Purchasing Officer, Purchasing Coordinator, Associate Buyer, Senior Purchasing Assistant, Purchasing Supervisor, Purchase Specialist, Junior Buyer, Purchasing Officer, Senior Purchasing Manager, Purchasing Analyst, Purchasing Buyer, Materials Buyer, Assistant Buyer, Assistant Purchasing Manager, Purchasing Consultant, Purchasing Associate, Purchasing Agent, Director of Procurement, Procurement Analyst, Commodity Trader, Director of Purchasing, Category Buyer, Strategic Sourcing Analyst, Media Buyer, Commodity Broker, Sourcing Associate, Strategic Sourcing Lead, Sourcing Director, Global Sourcing Manager"
         type: string
       shards:
         description: "Number of parallel runners"
@@ -35,7 +35,7 @@ jobs:
     uses: ./.github/workflows/linkedin_roles_slice.yml
     with:
       role_start: 46
-      role_end: 68
+      role_end: 80
       state_split_mode: ${{ inputs.state_split_mode || 'auto' }}
       post_time: ${{ inputs.post_time || 'week' }}
       roles: ${{ inputs.roles }}

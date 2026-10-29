@@ -2,7 +2,7 @@
 """
 LinkedIn Recruiter Posts Scraper
 ================================
-Scrapes LinkedIn Posts for 68 procurement/sourcing/buying roles.
+Scrapes LinkedIn Posts for the shared procurement/sourcing/buying role catalog.
 This script uses Playwright to log in via a session cookie (`li_at`)
 and searches the "Posts" tab for hiring signals.
 
